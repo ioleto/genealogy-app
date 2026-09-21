@@ -1,0 +1,175 @@
+:root {
+  /* Neutral base palette — fixed, not user-configurable */
+  --color-paper: #f4f4f1;
+  --color-paper-raised: #fbfbf9;
+  --color-ink: #211f1c;
+  --color-ink-muted: #6b6862;
+  --color-border: rgba(33, 31, 28, 0.13);
+  --color-border-strong: rgba(33, 31, 28, 0.26);
+  --color-danger: #a3402f;
+
+  /* User-configurable accents — overridden at runtime via ThemeContext */
+  --color-primary: #2f5d50;
+  --color-primary-soft: rgba(47, 93, 80, 0.12);
+  --color-secondary: #b08d57;
+  --color-secondary-soft: rgba(176, 141, 87, 0.14);
+
+  --font-display: "Fraunces", "Iowan Old Style", serif;
+  --font-body: "IBM Plex Sans", -apple-system, sans-serif;
+
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: var(--font-body);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-paper-raised);
+  color: var(--color-ink);
+  border-radius: var(--radius);
+  padding: 0.55em 1.1em;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.btn:hover {
+  border-color: var(--color-ink);
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+  border-color: var(--color-primary);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--color-primary-soft);
+  border-color: transparent;
+}
+
+.btn-danger-text {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-danger);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  margin-bottom: 1.1em;
+}
+
+.field label {
+  font-size: 0.82rem;
+  color: var(--color-ink-muted);
+  font-weight: 500;
+}
+
+.field input,
+.field select,
+.field textarea {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 0.55em 0.7em;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-paper-raised);
+  color: var(--color-ink);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--color-primary);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.card {
+  background: var(--color-paper-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.muted {
+  color: var(--color-ink-muted);
+}
+
+.error-banner {
+  background: rgba(163, 64, 47, 0.1);
+  border: 1px solid rgba(163, 64, 47, 0.3);
+  color: var(--color-danger);
+  border-radius: var(--radius);
+  padding: 0.7em 1em;
+  font-size: 0.88rem;
+  margin-bottom: 1em;
+}
+
+.app-loading {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ink-muted);
+  font-size: 0.9rem;
+}

@@ -1,0 +1,111 @@
+# Arbre Généalogique
+
+Application web pour construire et explorer un arbre généalogique familial,
+à plusieurs, avec un backend FastAPI, une base PostgreSQL et une interface
+React. Pensée pour un déploiement en une fois depuis Portainer.
+
+## Ce que ça fait
+
+- **Fiches** : une fiche par personne (identité, dates et lieux de
+  naissance/décès, profession, notes, photo).
+- **Liens** : chaque fiche se relie aux autres par des **unions** (mariage,
+  union civile, concubinage…) et des **filiations** — le même modèle que
+  les logiciels de généalogie professionnels (proche du standard GEDCOM),
+  plutôt qu'un simple lien "parent/enfant". Ça gère nativement les
+  remariages, demi-frères et sœurs, parents inconnus, etc.
+- **Arbre vertical interactif** : navigation en se déplaçant/zoomant dans
+  l'arbre, recentrage sur n'importe quelle fiche en cliquant dessus. Deux
+  couleurs configurables distinguent la **lignée directe** des
+  **conjoint·e·s par alliance**.
+- **Export** de l'arbre affiché en **PNG** et **PDF** (image complète,
+  indépendante du cadrage à l'écran).
+- **Plusieurs comptes** avec 3 rôles : administrateur (gère aussi les
+  comptes), contributeur (édite l'arbre), lecteur (consultation seule).
+- **Paramètres d'apparence** : couleur principale et secondaire, avec
+  quelques palettes suggérées.
+
+## Architecture
+
+```
+┌───────────┐      /api/*, /uploads/*     ┌───────────┐        ┌────────────┐
+│  frontend │ ───────────────────────────▶│  backend  │ ──────▶│ PostgreSQL │
+│  (nginx)  │◀─────────────────────────── │ (FastAPI) │        │            │
+└───────────┘                              └───────────┘        └────────────┘
+```
+
+Le frontend (React, servi par nginx) proxifie les appels `/api/` et
+`/uploads/` vers le backend — un seul point d'entrée est donc exposé.
+Le backend crée son schéma de base de données et le compte administrateur
+tout seul au premier démarrage : aucune migration manuelle à lancer.
+
+## Déployer via Portainer (recommandé)
+
+1. **Pré-requis** : un réseau Docker existant sur ton serveur, sur lequel
+   l'application sera exposée (celui de ton reverse proxy — Traefik, Nginx
+   Proxy Manager, Caddy…). Si tu n'en as pas :
+   ```
+   docker network create proxy
+   ```
+2. Dans Portainer : **Stacks → Add stack → Repository**.
+3. Renseigne l'URL de ce dépôt Git et le chemin `docker-compose.yml` (à la
+   racine).
+4. Portainer détecte les variables sans valeur par défaut et affiche un
+   formulaire **Environment variables** — remplis-le :
+
+   | Variable | Description |
+   |---|---|
+   | `POSTGRES_PASSWORD` | Mot de passe de la base PostgreSQL |
+   | `JWT_SECRET` | Chaîne aléatoire (ex. générée avec `openssl rand -hex 32`) |
+   | `ADMIN_EMAIL` | Email du compte administrateur créé au démarrage |
+   | `ADMIN_PASSWORD` | Mot de passe de ce compte |
+   | `NETWORK_NAME` | Nom du réseau Docker existant (étape 1) sur lequel exposer l'app |
+   | `PUBLISHED_PORT` | *(optionnel, défaut 8091)* port publié pour un accès direct |
+
+5. **Deploy the stack**. Portainer crée les volumes (`postgres_data`,
+   `backend_uploads`) et rattache le frontend au réseau indiqué.
+6. Configure ton reverse proxy pour pointer vers le service `frontend`
+   (port 80) sur ce réseau — ou accède directement via
+   `http://ton-serveur:PUBLISHED_PORT` si tu n'utilises pas de reverse proxy.
+7. Connecte-toi avec `ADMIN_EMAIL` / `ADMIN_PASSWORD`, puis crée les autres
+   comptes depuis **Utilisateurs**.
+
+Pour mettre à jour l'application plus tard : **Stacks → (ta stack) →
+Pull and redeploy** dans Portainer.
+
+## Développement local
+
+```bash
+# Backend
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL=sqlite+aiosqlite:///./dev.db JWT_SECRET=dev ADMIN_PASSWORD=dev
+uvicorn app.main:app --reload
+
+# Frontend (autre terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+Ou avec Docker Compose (copie `.env.example` en `.env` d'abord — voir les
+avertissements dans ce fichier) :
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+## Notes de conception
+
+- **Modèle de données** : `Person` ↔ `Union` (le couple) ↔ `Filiation`
+  (l'enfant rattaché à cette union). Cette indirection par l'union est ce
+  qui permet de représenter proprement plusieurs unions successives, des
+  enfants de lits différents, ou un parent inconnu.
+- **Le backend ne stocke que le graphe complet** (`/api/tree/graph`) ; la
+  mise en page de l'arbre (générations, positionnement, couleurs) est
+  calculée côté frontend. Ça garde le backend simple et réutilisable pour
+  d'autres vues futures (export GEDCOM, statistiques, etc.).
+- **Sécurité** : mots de passe hachés avec bcrypt, jetons JWT, accès en
+  lecture seule pour le rôle "lecteur", écriture réservée aux
+  contributeurs/administrateurs.

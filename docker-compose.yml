@@ -1,0 +1,68 @@
+# Arbre Généalogique — stack Docker
+#
+# Pensé pour un déploiement Portainer "Stack from a Git repository" :
+# aucune valeur sensible n'est fixée ici, donc Portainer proposera un
+# formulaire pour les renseigner (mot de passe, secret JWT, identifiants
+# admin, et le réseau Docker existant sur lequel exposer l'application).
+# Les volumes nommés ci-dessous sont créés automatiquement au déploiement.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-genealogy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Merci de renseigner un mot de passe PostgreSQL}
+      POSTGRES_DB: ${POSTGRES_DB:-genealogy}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-genealogy}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-genealogy}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-genealogy}
+      JWT_SECRET: ${JWT_SECRET:?Merci de renseigner un secret JWT aléatoire (ex. openssl rand -hex 32)}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Merci de renseigner l'email du compte administrateur}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Merci de renseigner le mot de passe du compte administrateur}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Administrateur}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      # Accès direct optionnel (utile sans reverse proxy, ou pour des tests).
+      - "${PUBLISHED_PORT:-8091}:80"
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  backend_uploads:
+
+networks:
+  internal:
+    driver: bridge
+  proxy:
+    external: true
+    name: ${NETWORK_NAME:?Merci d'indiquer le nom du réseau Docker existant sur lequel exposer l'application (ex. celui de votre reverse proxy)}

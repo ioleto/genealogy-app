@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/uploads/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Env
+.env
+
+# OS / editors
+.DS_Store
+.vscode/
+*.tsbuildinfo

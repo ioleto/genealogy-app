@@ -1,0 +1,129 @@
+.person-form-card {
+  padding: 1.6rem 1.8rem;
+  margin-bottom: 1.6rem;
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 0.78rem;
+  color: var(--color-ink-muted);
+  font-weight: 400;
+  margin-top: 0.3em;
+}
+
+.checkbox-inline input {
+  width: auto;
+}
+
+textarea {
+  resize: vertical;
+  font-family: var(--font-body);
+}
+
+.relation-section {
+  padding: 1.4rem 1.8rem;
+  margin-bottom: 1.2rem;
+}
+
+.relation-section h2 {
+  font-size: 1.05rem;
+  margin-bottom: 0.9rem;
+}
+
+.relation-row {
+  font-size: 0.92rem;
+  margin-bottom: 0.6rem;
+}
+
+.relation-add-form {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--color-border);
+}
+
+.relation-add-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.relation-add-form-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.relation-add-form-inline .person-picker {
+  flex: 1;
+}
+
+.union-block {
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-secondary);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.9rem;
+}
+
+.union-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.92rem;
+}
+
+.children-list {
+  list-style: none;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  border-left: 3px solid var(--color-primary);
+  padding-left: 0.8rem;
+}
+
+.children-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  padding: 0.3rem 0;
+}
+
+.photo-field {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.photo-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--color-border-strong);
+  flex-shrink: 0;
+}
+
+.photo-field-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+}
+
+.photo-field-controls input[type="text"],
+.photo-field-controls input:not([type="file"]) {
+  flex: 1;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  padding: 0.55em 0.7em;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-paper-raised);
+}
+
+.photo-upload-btn {
+  white-space: nowrap;
+  cursor: pointer;
+}
