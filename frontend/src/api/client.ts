@@ -127,6 +127,35 @@ export async function uploadPhoto(file: File): Promise<string> {
   return res.data.url;
 }
 
+// ---------- GEDCOM ----------
+
+export interface GedcomImportResult {
+  persons: number;
+  unions: number;
+  filiations: number;
+  skipped_unions: number;
+}
+
+export async function exportGedcom(): Promise<void> {
+  const res = await api.get("/api/gedcom/export", { responseType: "blob" });
+  const blob = new Blob([res.data], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "arbre-genealogique.ged";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function importGedcom(file: File): Promise<GedcomImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await api.post<GedcomImportResult>("/api/gedcom/import", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
 // ---------- Unions ----------
 
 export async function createUnion(data: UnionInput): Promise<UnionRecord> {

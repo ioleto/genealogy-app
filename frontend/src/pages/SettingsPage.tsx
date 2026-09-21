@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { ChangeEvent, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { DEFAULT_PRIMARY, DEFAULT_SECONDARY, useTheme } from "../theme/ThemeContext";
-import { extractErrorMessage } from "../api/client";
+import { exportGedcom, extractErrorMessage, importGedcom, type GedcomImportResult } from "../api/client";
 
 const PRESETS: { name: string; primary: string; secondary: string }[] = [
   { name: "Pin & laiton", primary: "#2f5d50", secondary: "#b08d57" },
@@ -12,12 +12,18 @@ const PRESETS: { name: string; primary: string; secondary: string }[] = [
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const canEdit = user?.role === "admin" || user?.role === "editor";
   const { primary, secondary, setColors } = useTheme();
   const [draftPrimary, setDraftPrimary] = useState(primary);
   const [draftSecondary, setDraftSecondary] = useState(secondary);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [gedcomError, setGedcomError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<GedcomImportResult | null>(null);
 
   async function handleSave() {
     setSaving(true);
@@ -41,6 +47,35 @@ export default function SettingsPage() {
   function resetDefaults() {
     setDraftPrimary(DEFAULT_PRIMARY);
     setDraftSecondary(DEFAULT_SECONDARY);
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    setGedcomError(null);
+    try {
+      await exportGedcom();
+    } catch (err) {
+      setGedcomError(extractErrorMessage(err, "L'export GEDCOM a échoué."));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleImport(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setGedcomError(null);
+    setImportResult(null);
+    try {
+      const result = await importGedcom(file);
+      setImportResult(result);
+    } catch (err) {
+      setGedcomError(extractErrorMessage(err, "L'import GEDCOM a échoué."));
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
   }
 
   return (
@@ -114,6 +149,54 @@ export default function SettingsPage() {
           </button>
           {saved && <span className="muted" style={{ alignSelf: "center", fontSize: "0.85rem" }}>Enregistré.</span>}
         </div>
+      </section>
+
+      <section className="card" style={{ padding: "1.6rem 1.8rem", maxWidth: 520, marginTop: "1.4rem" }}>
+        <h2 style={{ fontSize: "1.05rem", marginBottom: "0.4rem" }}>Import / Export GEDCOM</h2>
+        <p className="muted" style={{ fontSize: "0.86rem", marginTop: 0, marginBottom: "1.2rem" }}>
+          GEDCOM est le format standard reconnu par la quasi-totalité des logiciels de généalogie
+          (Gramps, Geneanet, MyHeritage, Ancestry, FamilySearch…), pour sauvegarder ou transférer un arbre.
+        </p>
+
+        {gedcomError && <div className="error-banner">{gedcomError}</div>}
+
+        {importResult && (
+          <div className="card" style={{ padding: "0.8em 1em", marginBottom: "1.1rem", fontSize: "0.86rem" }}>
+            Import terminé : {importResult.persons} fiche{importResult.persons > 1 ? "s" : ""}, {importResult.unions}{" "}
+            union{importResult.unions > 1 ? "s" : ""}, {importResult.filiations} filiation
+            {importResult.filiations > 1 ? "s" : ""} créée{importResult.filiations > 1 ? "s" : ""}.
+            {importResult.skipped_unions > 0 && (
+              <> {importResult.skipped_unions} union{importResult.skipped_unions > 1 ? "s" : ""} en doublon ignorée
+              {importResult.skipped_unions > 1 ? "s" : ""}.</>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+          <button className="btn" type="button" onClick={handleExport} disabled={exporting}>
+            {exporting ? "Export…" : "Exporter en .ged"}
+          </button>
+
+          {canEdit && (
+            <label className="btn btn-ghost" style={{ cursor: "pointer" }}>
+              {importing ? "Import…" : "Importer un fichier .ged"}
+              <input
+                type="file"
+                accept=".ged,text/plain"
+                style={{ display: "none" }}
+                disabled={importing}
+                onChange={handleImport}
+              />
+            </label>
+          )}
+        </div>
+
+        {canEdit && (
+          <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.9rem", marginBottom: 0 }}>
+            L'import ajoute toujours de <strong>nouvelles</strong> fiches — il ne cherche pas à fusionner avec
+            l'existant. À réserver à un import initial, ou à faire sur un arbre vide.
+          </p>
+        )}
       </section>
     </div>
   );

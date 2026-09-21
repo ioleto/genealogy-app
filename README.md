@@ -19,6 +19,9 @@ React. Pensée pour un déploiement en une fois depuis Portainer.
   **conjoint·e·s par alliance**.
 - **Export** de l'arbre affiché en **PNG** et **PDF** (image complète,
   indépendante du cadrage à l'écran).
+- **Import / export GEDCOM** — le format standard reconnu par la quasi-totalité
+  des logiciels de généalogie (Gramps, Geneanet, MyHeritage, Ancestry,
+  FamilySearch…), pour sauvegarder l'arbre ou en récupérer un déjà existant.
 - **Plusieurs comptes** avec 3 rôles : administrateur (gère aussi les
   comptes), contributeur (édite l'arbre), lecteur (consultation seule).
 - **Paramètres d'apparence** : couleur principale et secondaire, avec
@@ -109,3 +112,10 @@ docker compose up --build
 - **Sécurité** : mots de passe hachés avec bcrypt, jetons JWT, accès en
   lecture seule pour le rôle "lecteur", écriture réservée aux
   contributeurs/administrateurs.
+- **GEDCOM** : export au format 5.5.1 (le plus largement compatible),
+  import tolérant qui lit aussi la plupart des fichiers 7.0 de base (les
+  balises INDI/FAM/NAME/BIRT/DEAT/MARR/HUSB/WIFE/CHIL sont stables entre les
+  deux versions). Limites assumées : l'import crée toujours de nouvelles
+  fiches sans tenter de fusionner avec l'existant (pas de dédoublonnage) ;
+  les dates non standard (calendriers non grégoriens) et les pièces jointes
+  (photos) ne sont pas prises en charge dans l'échange GEDCOM.

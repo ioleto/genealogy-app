@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import AsyncSessionLocal, Base, engine
 from app.models import User, UserRole
-from app.routers import auth, persons, tree, unions, uploads, users
+from app.routers import auth, gedcom, persons, tree, unions, uploads, users
 from app.security import hash_password
 
 settings = get_settings()
@@ -54,6 +54,7 @@ app.include_router(persons.router)
 app.include_router(unions.router)
 app.include_router(tree.router)
 app.include_router(uploads.router)
+app.include_router(gedcom.router)
 
 os.makedirs(uploads.UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads.UPLOAD_DIR), name="uploads")
