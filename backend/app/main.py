@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.database import AsyncSessionLocal, Base, engine
+from app.database import AsyncSessionLocal, Base, add_missing_columns, engine
 from app.models import User, UserRole
 from app.routers import auth, families, gedcom, persons, tree, unions, uploads, users
 from app.security import hash_password
@@ -18,6 +18,7 @@ settings = get_settings()
 async def ensure_schema_and_admin() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(add_missing_columns)
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User))

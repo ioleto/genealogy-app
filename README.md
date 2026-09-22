@@ -130,3 +130,9 @@ docker compose up --build
   (elle est retirée de ses unions, qui survivent avec le conjoint restant ;
   une union sans aucun partenaire connu est supprimée) plutôt que d'être
   bloquée par une contrainte de base de données.
+- **Évolution du schéma sans migration manuelle** : au démarrage,
+  l'application crée les nouvelles tables *et* ajoute automatiquement les
+  colonnes qui manqueraient sur une base déjà existante (ex. l'ajout du
+  champ « famille » sur une base créée avant cette fonctionnalité). Un
+  simple **Pull and redeploy** dans Portainer suffit donc à absorber les
+  mises à jour du modèle de données, sans commande SQL à taper à la main.
