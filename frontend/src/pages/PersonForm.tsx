@@ -15,6 +15,7 @@ import {
 } from "../api/client";
 import type { Person, PersonInput, PersonSummary, TreeGraph, UnionRecord, UnionType } from "../api/types";
 import PersonPicker from "../components/PersonPicker";
+import FamilySelect from "../components/FamilySelect";
 import { useAuth } from "../auth/AuthContext";
 import "./PersonForm.css";
 
@@ -32,6 +33,7 @@ const emptyForm: PersonInput = {
   occupation: null,
   biography: null,
   photo_url: null,
+  family_id: null,
 };
 
 const UNION_LABELS: Record<UnionType, string> = {
@@ -42,7 +44,15 @@ const UNION_LABELS: Record<UnionType, string> = {
 };
 
 function toSummary(p: Person): PersonSummary {
-  return { id: p.id, first_name: p.first_name, last_name: p.last_name, birth_date: p.birth_date, death_date: p.death_date, sex: p.sex };
+  return {
+    id: p.id,
+    first_name: p.first_name,
+    last_name: p.last_name,
+    birth_date: p.birth_date,
+    death_date: p.death_date,
+    sex: p.sex,
+    family_id: p.family_id,
+  };
 }
 
 export default function PersonForm() {
@@ -126,8 +136,15 @@ export default function PersonForm() {
   async function handleDelete() {
     if (!id) return;
     if (!window.confirm("Supprimer définitivement cette fiche et tous ses liens familiaux ?")) return;
-    await deletePerson(id);
-    navigate("/fiches");
+    setSaving(true);
+    setError(null);
+    try {
+      await deletePerson(id);
+      navigate("/fiches");
+    } catch (err) {
+      setError(extractErrorMessage(err, "Suppression impossible."));
+      setSaving(false);
+    }
   }
 
   async function refreshGraph() {
@@ -149,7 +166,7 @@ export default function PersonForm() {
       <div className="page-header">
         <h1>{isNew ? "Nouvelle fiche" : `${form.first_name} ${form.last_name}`.trim() || "Fiche"}</h1>
         {!isNew && canEdit && (
-          <button className="btn btn-danger-text" onClick={handleDelete} type="button">
+          <button className="btn btn-danger-text" onClick={handleDelete} type="button" disabled={saving}>
             Supprimer la fiche
           </button>
         )}
@@ -179,6 +196,11 @@ export default function PersonForm() {
               onChange={(e) => set("last_name", e.target.value)}
             />
           </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="family">Famille</label>
+          <FamilySelect value={form.family_id} onChange={(v) => set("family_id", v)} disabled={!canEdit} />
         </div>
 
         <div className="field-row">

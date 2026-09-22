@@ -59,9 +59,15 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
 
   function layoutDescendant(personId: string, generation: number): number {
     if (!personById.has(personId)) return nextLeafX++;
-    if (descendantVisited.has(personId) || generation > MAX_DEPTH) {
-      const x = nextLeafX++;
-      return x;
+    if (descendantVisited.has(personId)) {
+      // Déjà positionné ailleurs (ex. un enfant rattaché à deux unions —
+      // parents biologiques et adoptifs). On réutilise sa position réelle
+      // plutôt que d'en générer une nouvelle "fantôme" et déconnectée.
+      const existing = nodes.find((n) => n.personId === personId);
+      return existing ? existing.x : nextLeafX++;
+    }
+    if (generation > MAX_DEPTH) {
+      return nextLeafX++;
     }
     descendantVisited.add(personId);
 

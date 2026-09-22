@@ -24,6 +24,12 @@ React. Pensée pour un déploiement en une fois depuis Portainer.
   FamilySearch…), pour sauvegarder l'arbre ou en récupérer un déjà existant.
 - **Plusieurs comptes** avec 3 rôles : administrateur (gère aussi les
   comptes), contributeur (édite l'arbre), lecteur (consultation seule).
+- **Plusieurs familles** : les fiches peuvent être rattachées à une famille
+  nommée (« Famille Dupont », « Famille Martin »…), avec filtre dédié dans
+  la liste des fiches. Une fiche sans famille déclarée reste utilisable
+  normalement — c'est facultatif, pas une contrainte de rangement.
+- **Sélection multiple** dans la liste des fiches : suppression groupée ou
+  réassignation groupée à une famille.
 - **Paramètres d'apparence** : couleur principale et secondaire, avec
   quelques palettes suggérées.
 
@@ -119,3 +125,8 @@ docker compose up --build
   fiches sans tenter de fusionner avec l'existant (pas de dédoublonnage) ;
   les dates non standard (calendriers non grégoriens) et les pièces jointes
   (photos) ne sont pas prises en charge dans l'échange GEDCOM.
+- **Suppression de fiche** : une fiche est toujours détachable, même
+  mariée et avec des enfants. La suppression retire proprement ses liens
+  (elle est retirée de ses unions, qui survivent avec le conjoint restant ;
+  une union sans aucun partenaire connu est supprimée) plutôt que d'être
+  bloquée par une contrainte de base de données.

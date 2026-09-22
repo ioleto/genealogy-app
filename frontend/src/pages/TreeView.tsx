@@ -26,10 +26,38 @@ export default function TreeView() {
 
   const svgRef = useRef<SVGSVGElement>(null);
   const groupRef = useRef<SVGGElement>(null);
+  const panGroupRef = useRef<SVGGElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const viewRef = useRef(view);
+  const rafRef = useRef<number | null>(null);
   const dragState = useRef<{ startX: number; startY: number; viewX: number; viewY: number } | null>(null);
+
+  function applyTransformNow() {
+    if (panGroupRef.current) {
+      const v = viewRef.current;
+      panGroupRef.current.setAttribute("transform", `translate(${v.x}, ${v.y}) scale(${v.scale})`);
+    }
+  }
+
+  // Commits the ref'd view into React state, coalesced to at most once per
+  // animation frame so dragging/zooming never triggers a full re-render of
+  // every node/line on each raw pointer or wheel event (the cause of visible
+  // stutter/paint glitches on larger trees).
+  function scheduleStateSync() {
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setView({ ...viewRef.current });
+    });
+  }
+
+  function setViewNow(next: { x: number; y: number; scale: number }) {
+    viewRef.current = next;
+    applyTransformNow();
+    setView(next);
+  }
 
   useEffect(() => {
     getTreeGraph()
@@ -41,31 +69,48 @@ export default function TreeView() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Recentre la vue à chaque changement de personne centrale : sans ça, la
+  // position de défilement précédente restait appliquée et la nouvelle
+  // fiche centrée pouvait se retrouver hors champ, donnant l'impression que
+  // le clic n'avait rien fait.
+  useEffect(() => {
+    setViewNow({ x: 0, y: 0, scale: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootId]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   // Non-passive wheel listener so we can preventDefault (zoom instead of page scroll).
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      setView((v) => {
-        const delta = -e.deltaY * 0.0015;
-        const nextScale = Math.min(2.4, Math.max(0.25, v.scale * (1 + delta)));
-        return { ...v, scale: nextScale };
-      });
+      const delta = -e.deltaY * 0.0015;
+      const nextScale = Math.min(2.4, Math.max(0.25, viewRef.current.scale * (1 + delta)));
+      viewRef.current = { ...viewRef.current, scale: nextScale };
+      applyTransformNow();
+      scheduleStateSync();
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   function onPointerDown(e: React.PointerEvent) {
-    dragState.current = { startX: e.clientX, startY: e.clientY, viewX: view.x, viewY: view.y };
+    dragState.current = { startX: e.clientX, startY: e.clientY, viewX: viewRef.current.x, viewY: viewRef.current.y };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
   function onPointerMove(e: React.PointerEvent) {
     if (!dragState.current) return;
     const dx = e.clientX - dragState.current.startX;
     const dy = e.clientY - dragState.current.startY;
-    setView((v) => ({ ...v, x: dragState.current!.viewX + dx, y: dragState.current!.viewY + dy }));
+    viewRef.current = { ...viewRef.current, x: dragState.current.viewX + dx, y: dragState.current.viewY + dy };
+    applyTransformNow();
+    scheduleStateSync();
   }
   function onPointerUp() {
     dragState.current = null;
@@ -79,7 +124,7 @@ export default function TreeView() {
   }, [graph, rootId]);
 
   function recenter() {
-    setView({ x: 0, y: 0, scale: 1 });
+    setViewNow({ x: 0, y: 0, scale: 1 });
   }
 
   function yearsOf(p: Person): string {
@@ -230,7 +275,7 @@ export default function TreeView() {
         onPointerLeave={onPointerUp}
       >
         <svg ref={svgRef} width="100%" height="100%">
-          <g transform={`translate(${view.x}, ${view.y}) scale(${view.scale})`}>
+          <g ref={panGroupRef} transform={`translate(${view.x}, ${view.y}) scale(${view.scale})`}>
             <g ref={groupRef} transform={`translate(400, ${rowOffset})`}>
               {layout?.spouseLines.map((l, i) => (
                 <line

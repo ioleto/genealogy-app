@@ -21,6 +21,7 @@ export interface PersonSummary {
   birth_date: string | null;
   death_date: string | null;
   sex: Sex;
+  family_id: string | null;
 }
 
 export interface Person extends PersonSummary {
@@ -37,6 +38,12 @@ export interface Person extends PersonSummary {
 }
 
 export type PersonInput = Omit<Person, "id" | "created_at" | "updated_at">;
+
+export interface Family {
+  id: string;
+  name: string;
+  created_at: string;
+}
 
 export interface UnionRecord {
   id: string;

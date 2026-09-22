@@ -57,11 +57,26 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class Family(Base):
+    """Regroupement nommé de fiches (ex. « Famille Dupont », « Famille
+    Martin »), pour organiser/filtrer plusieurs familles distinctes au sein
+    du même arbre. Une fiche peut n'appartenir à aucune famille déclarée."""
+
+    __tablename__ = "families"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    name: Mapped[str] = mapped_column(String(150), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class Person(Base):
     __tablename__ = "persons"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
 
+    family_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("families.id", ondelete="SET NULL"), nullable=True
+    )
     first_name: Mapped[str] = mapped_column(String(150), nullable=False)
     last_name: Mapped[str] = mapped_column(String(150), nullable=False)
     birth_last_name: Mapped[str | None] = mapped_column(String(150), nullable=True)

@@ -46,6 +46,24 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+# ---------- Family ----------
+
+class FamilyCreate(BaseModel):
+    name: str
+
+
+class FamilyUpdate(BaseModel):
+    name: str
+
+
+class FamilyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    created_at: datetime
+
+
 # ---------- Person ----------
 
 class PersonBase(BaseModel):
@@ -62,6 +80,7 @@ class PersonBase(BaseModel):
     occupation: str | None = None
     biography: str | None = None
     photo_url: str | None = None
+    family_id: str | None = None
 
 
 class PersonCreate(PersonBase):
@@ -82,6 +101,7 @@ class PersonUpdate(BaseModel):
     occupation: str | None = None
     biography: str | None = None
     photo_url: str | None = None
+    family_id: str | None = None
 
 
 class PersonOut(PersonBase):
@@ -101,6 +121,7 @@ class PersonSummary(BaseModel):
     birth_date: date | None = None
     death_date: date | None = None
     sex: Sex
+    family_id: str | None = None
 
 
 # ---------- Union / Filiation ----------

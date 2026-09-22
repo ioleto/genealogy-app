@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud, schemas
@@ -9,8 +10,13 @@ router = APIRouter(prefix="/api/persons", tags=["persons"])
 
 
 @router.get("", response_model=list[schemas.PersonSummary])
-async def list_persons(search: str | None = None, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    return await crud.list_persons(db, search)
+async def list_persons(
+    search: str | None = None,
+    family_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return await crud.list_persons(db, search, family_id)
 
 
 @router.post("", response_model=schemas.PersonOut, status_code=status.HTTP_201_CREATED)
@@ -41,4 +47,11 @@ async def delete_person(person_id: str, db: AsyncSession = Depends(get_db), _=De
     person = await crud.get_person(db, person_id)
     if not person:
         raise HTTPException(status_code=404, detail="Fiche introuvable")
-    await crud.delete_person(db, person)
+    try:
+        await crud.delete_person(db, person)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Suppression impossible : cette fiche est encore liée à d'autres données.",
+        )

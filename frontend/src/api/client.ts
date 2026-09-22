@@ -1,5 +1,6 @@
 import axios from "axios";
 import type {
+  Family,
   Filiation,
   Person,
   PersonInput,
@@ -94,8 +95,8 @@ export async function updateMyTheme(data: {
 
 // ---------- Persons ----------
 
-export async function listPersons(search?: string): Promise<PersonSummary[]> {
-  const res = await api.get<PersonSummary[]>("/api/persons", { params: { search } });
+export async function listPersons(search?: string, familyId?: string): Promise<PersonSummary[]> {
+  const res = await api.get<PersonSummary[]>("/api/persons", { params: { search, family_id: familyId } });
   return res.data;
 }
 
@@ -154,6 +155,27 @@ export async function importGedcom(file: File): Promise<GedcomImportResult> {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return res.data;
+}
+
+// ---------- Families ----------
+
+export async function listFamilies(): Promise<Family[]> {
+  const res = await api.get<Family[]>("/api/families");
+  return res.data;
+}
+
+export async function createFamily(name: string): Promise<Family> {
+  const res = await api.post<Family>("/api/families", { name });
+  return res.data;
+}
+
+export async function renameFamily(id: string, name: string): Promise<Family> {
+  const res = await api.patch<Family>(`/api/families/${id}`, { name });
+  return res.data;
+}
+
+export async function deleteFamily(id: string): Promise<void> {
+  await api.delete(`/api/families/${id}`);
 }
 
 // ---------- Unions ----------

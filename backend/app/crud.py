@@ -75,7 +75,7 @@ async def get_person(db: AsyncSession, person_id: str) -> models.Person | None:
     return result.scalar_one_or_none()
 
 
-async def list_persons(db: AsyncSession, search: str | None = None) -> list[models.Person]:
+async def list_persons(db: AsyncSession, search: str | None = None, family_id: str | None = None) -> list[models.Person]:
     stmt = select(models.Person)
     if search:
         like = f"%{search}%"
@@ -86,6 +86,8 @@ async def list_persons(db: AsyncSession, search: str | None = None) -> list[mode
                 models.Person.birth_last_name.ilike(like),
             )
         )
+    if family_id:
+        stmt = stmt.where(models.Person.family_id == family_id)
     stmt = stmt.order_by(models.Person.last_name, models.Person.first_name)
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -100,6 +102,34 @@ async def update_person(db: AsyncSession, person: models.Person, data: schemas.P
 
 
 async def delete_person(db: AsyncSession, person: models.Person) -> None:
+    """Supprime une fiche en détachant proprement ses liens familiaux plutôt
+    que de laisser la contrainte de clé étrangère bloquer la suppression :
+    - ses propres filiations (son lien en tant qu'enfant) sont supprimées ;
+    - les unions où elle est partenaire sont préservées quand l'autre
+      partenaire est connu (elle est simplement retirée de l'union, qui
+      garde ses enfants), et supprimées seulement si elle en était l'unique
+      partenaire connu.
+    """
+    result = await db.execute(select(models.Filiation).where(models.Filiation.child_id == person.id))
+    for filiation in result.scalars().all():
+        await db.delete(filiation)
+
+    result = await db.execute(
+        select(models.Union).where(
+            or_(models.Union.partner1_id == person.id, models.Union.partner2_id == person.id)
+        )
+    )
+    for union in result.scalars().all():
+        if union.partner1_id == person.id:
+            if union.partner2_id is not None:
+                union.partner1_id = union.partner2_id
+                union.partner2_id = None
+            else:
+                await db.delete(union)
+        elif union.partner2_id == person.id:
+            union.partner2_id = None
+
+    await db.flush()
     await db.delete(person)
     await db.commit()
 
@@ -159,3 +189,42 @@ async def get_full_graph(db: AsyncSession) -> tuple[list[models.Person], list[mo
     unions = (await db.execute(select(models.Union))).scalars().all()
     filiations = (await db.execute(select(models.Filiation))).scalars().all()
     return list(persons), list(unions), list(filiations)
+
+
+# ---------- Families ----------
+
+async def list_families(db: AsyncSession) -> list[models.Family]:
+    result = await db.execute(select(models.Family).order_by(models.Family.name))
+    return list(result.scalars().all())
+
+
+async def get_family(db: AsyncSession, family_id: str) -> models.Family | None:
+    result = await db.execute(select(models.Family).where(models.Family.id == family_id))
+    return result.scalar_one_or_none()
+
+
+async def get_family_by_name(db: AsyncSession, name: str) -> models.Family | None:
+    result = await db.execute(select(models.Family).where(models.Family.name == name))
+    return result.scalar_one_or_none()
+
+
+async def create_family(db: AsyncSession, name: str) -> models.Family:
+    family = models.Family(name=name)
+    db.add(family)
+    await db.commit()
+    await db.refresh(family)
+    return family
+
+
+async def rename_family(db: AsyncSession, family: models.Family, name: str) -> models.Family:
+    family.name = name
+    await db.commit()
+    await db.refresh(family)
+    return family
+
+
+async def delete_family(db: AsyncSession, family: models.Family) -> None:
+    # Les fiches de cette famille ne sont pas supprimées : la contrainte
+    # ON DELETE SET NULL les détache simplement de la famille.
+    await db.delete(family)
+    await db.commit()
