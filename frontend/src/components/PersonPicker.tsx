@@ -8,9 +8,14 @@ interface Props {
   onChange: (person: PersonSummary | null) => void;
   excludeIds?: string[];
   placeholder?: string;
+  /** Reste toujours en mode recherche, même une fois une valeur choisie —
+   * utile pour un sélecteur qui sert à CHANGER la sélection courante
+   * (ex. « centrer l'arbre sur… ») plutôt qu'à la définir une seule fois
+   * puis la verrouiller (usage par défaut, ex. choisir un conjoint). */
+  alwaysSearchable?: boolean;
 }
 
-export default function PersonPicker({ value, onChange, excludeIds = [], placeholder }: Props) {
+export default function PersonPicker({ value, onChange, excludeIds = [], placeholder, alwaysSearchable = false }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PersonSummary[]>([]);
   const [open, setOpen] = useState(false);
@@ -37,7 +42,7 @@ export default function PersonPicker({ value, onChange, excludeIds = [], placeho
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, open]);
 
-  if (value) {
+  if (value && !alwaysSearchable) {
     return (
       <div className="person-picker person-picker-chosen">
         <span>

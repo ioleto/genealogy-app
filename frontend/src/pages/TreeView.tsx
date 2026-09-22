@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { extractErrorMessage, getTreeGraph } from "../api/client";
-import type { Person, PersonSummary, TreeGraph } from "../api/types";
+import type { Person, TreeGraph } from "../api/types";
 import { computeTreeLayout } from "../components/treeLayout";
 import PersonPicker from "../components/PersonPicker";
 import { useTheme } from "../theme/ThemeContext";
@@ -10,14 +11,19 @@ const SLOT_WIDTH = 200;
 const ROW_HEIGHT = 168;
 const CARD_WIDTH = 168;
 const CARD_HEIGHT = 60;
+const PHOTO_SIZE = 40;
+const PHOTO_MARGIN = 10;
 
 const INK = "#211f1c";
 const INK_MUTED = "#6b6862";
 const PAPER = "#f4f4f1";
 const PAPER_RAISED = "#fbfbf9";
 const BORDER = "rgba(33, 31, 28, 0.22)";
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 2.4;
 
 export default function TreeView() {
+  const navigate = useNavigate();
   const { primary, secondary } = useTheme();
   const [graph, setGraph] = useState<TreeGraph | null>(null);
   const [rootId, setRootId] = useState<string | null>(null);
@@ -91,7 +97,7 @@ export default function TreeView() {
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const delta = -e.deltaY * 0.0015;
-      const nextScale = Math.min(2.4, Math.max(0.25, viewRef.current.scale * (1 + delta)));
+      const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, viewRef.current.scale * (1 + delta)));
       viewRef.current = { ...viewRef.current, scale: nextScale };
       applyTransformNow();
       scheduleStateSync();
@@ -99,6 +105,11 @@ export default function TreeView() {
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  function zoomBy(factor: number) {
+    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, viewRef.current.scale * factor));
+    setViewNow({ x: viewRef.current.x, y: viewRef.current.y, scale: nextScale });
+  }
 
   function onPointerDown(e: React.PointerEvent) {
     dragState.current = { startX: e.clientX, startY: e.clientY, viewX: viewRef.current.x, viewY: viewRef.current.y };
@@ -142,38 +153,70 @@ export default function TreeView() {
     URL.revokeObjectURL(url);
   }
 
-  function buildExportCanvas(): Promise<HTMLCanvasElement> {
+  // Remplace les références <image href="/uploads/..."> par leur contenu en
+  // base64 : une fois l'arbre sérialisé en SVG autonome (data URI) pour
+  // l'export, une image encore chargée depuis une URL externe au document
+  // peut faire échouer canvas.toBlob/toDataURL (canvas "pollué") selon les
+  // navigateurs. L'inliner rend l'export totalement autonome.
+  async function inlinePhotos(root: SVGGElement): Promise<void> {
+    const images = Array.from(root.querySelectorAll("image"));
+    await Promise.all(
+      images.map(async (img) => {
+        const href = img.getAttribute("href");
+        if (!href || href.startsWith("data:")) return;
+        try {
+          const res = await fetch(href);
+          const blob = await res.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+          img.setAttribute("href", dataUrl);
+        } catch {
+          // Une photo indisponible ne doit pas faire échouer tout l'export :
+          // on la retire simplement plutôt que de laisser un lien mort.
+          img.removeAttribute("href");
+        }
+      })
+    );
+  }
+
+  async function buildExportCanvas(): Promise<HTMLCanvasElement> {
+    const group = groupRef.current;
+    if (!group) throw new Error("Arbre non disponible");
+    const bbox = group.getBBox();
+    const PADDING = 48;
+    const SCALE = 2;
+    const width = (bbox.width + PADDING * 2) * SCALE;
+    const height = (bbox.height + PADDING * 2) * SCALE;
+
+    const ns = "http://www.w3.org/2000/svg";
+    const clone = group.cloneNode(true) as SVGGElement;
+    clone.setAttribute("transform", `translate(${PADDING - bbox.x}, ${PADDING - bbox.y})`);
+
+    await inlinePhotos(clone);
+
+    const exportSvg = document.createElementNS(ns, "svg");
+    exportSvg.setAttribute("xmlns", ns);
+    exportSvg.setAttribute("viewBox", `0 0 ${bbox.width + PADDING * 2} ${bbox.height + PADDING * 2}`);
+    exportSvg.setAttribute("width", String(width));
+    exportSvg.setAttribute("height", String(height));
+
+    const bg = document.createElementNS(ns, "rect");
+    bg.setAttribute("x", "0");
+    bg.setAttribute("y", "0");
+    bg.setAttribute("width", "100%");
+    bg.setAttribute("height", "100%");
+    bg.setAttribute("fill", PAPER);
+    exportSvg.appendChild(bg);
+    exportSvg.appendChild(clone);
+
+    const svgString = new XMLSerializer().serializeToString(exportSvg);
+    const svgDataUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgString);
+
     return new Promise((resolve, reject) => {
-      const group = groupRef.current;
-      if (!group) return reject(new Error("Arbre non disponible"));
-      const bbox = group.getBBox();
-      const PADDING = 48;
-      const SCALE = 2;
-      const width = (bbox.width + PADDING * 2) * SCALE;
-      const height = (bbox.height + PADDING * 2) * SCALE;
-
-      const ns = "http://www.w3.org/2000/svg";
-      const clone = group.cloneNode(true) as SVGGElement;
-      clone.setAttribute("transform", `translate(${PADDING - bbox.x}, ${PADDING - bbox.y})`);
-
-      const exportSvg = document.createElementNS(ns, "svg");
-      exportSvg.setAttribute("xmlns", ns);
-      exportSvg.setAttribute("viewBox", `0 0 ${bbox.width + PADDING * 2} ${bbox.height + PADDING * 2}`);
-      exportSvg.setAttribute("width", String(width));
-      exportSvg.setAttribute("height", String(height));
-
-      const bg = document.createElementNS(ns, "rect");
-      bg.setAttribute("x", "0");
-      bg.setAttribute("y", "0");
-      bg.setAttribute("width", "100%");
-      bg.setAttribute("height", "100%");
-      bg.setAttribute("fill", PAPER);
-      exportSvg.appendChild(bg);
-      exportSvg.appendChild(clone);
-
-      const svgString = new XMLSerializer().serializeToString(exportSvg);
-      const svgDataUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgString);
-
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
@@ -238,16 +281,32 @@ export default function TreeView() {
     <div className="tree-page">
       <div className="tree-toolbar">
         <div className="tree-toolbar-root">
-          <span className="muted" style={{ fontSize: "0.82rem" }}>
-            Centré sur
-          </span>
+          <div className="tree-toolbar-root-label">
+            <span className="muted" style={{ fontSize: "0.72rem" }}>
+              Centré sur
+            </span>
+            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+              {rootId && personById.get(rootId)
+                ? `${personById.get(rootId)!.first_name} ${personById.get(rootId)!.last_name}`
+                : "—"}
+            </span>
+          </div>
           <PersonPicker
-            value={rootId ? (personById.get(rootId) as PersonSummary | undefined) ?? null : null}
+            value={null}
             onChange={(p) => p && setRootId(p.id)}
-            placeholder="Choisir une personne…"
+            placeholder="Changer de fiche…"
+            alwaysSearchable
           />
         </div>
         <div className="tree-toolbar-actions">
+          <div className="tree-zoom-group">
+            <button className="btn btn-ghost" onClick={() => zoomBy(1 / 1.3)} type="button" aria-label="Dézoomer">
+              −
+            </button>
+            <button className="btn btn-ghost" onClick={() => zoomBy(1.3)} type="button" aria-label="Zoomer">
+              +
+            </button>
+          </div>
           <button className="btn btn-ghost" onClick={recenter} type="button">
             Recentrer
           </button>
@@ -326,12 +385,14 @@ export default function TreeView() {
                 const cy = n.generation * ROW_HEIGHT;
                 const accent = n.isBlood ? primary : secondary;
                 const isRoot = n.personId === rootId;
+                const hasPhoto = !!person.photo_url;
+                const textX = hasPhoto ? PHOTO_MARGIN * 2 + PHOTO_SIZE : 14;
                 return (
                   <g
                     key={n.personId}
                     transform={`translate(${cx - CARD_WIDTH / 2}, ${cy - CARD_HEIGHT / 2})`}
                     className="tree-node"
-                    onClick={() => setRootId(n.personId)}
+                    onClick={() => navigate(`/fiches/${n.personId}`)}
                   >
                     <rect
                       width={CARD_WIDTH}
@@ -342,10 +403,40 @@ export default function TreeView() {
                       strokeWidth={isRoot ? 2 : 1}
                     />
                     <rect x={0} y={0} width={4} height={CARD_HEIGHT} fill={accent} />
-                    <text x={14} y={24} fontFamily="IBM Plex Sans, sans-serif" fontSize={13} fontWeight={600} fill={INK}>
+                    {hasPhoto && (
+                      <>
+                        <rect
+                          x={PHOTO_MARGIN}
+                          y={(CARD_HEIGHT - PHOTO_SIZE) / 2}
+                          width={PHOTO_SIZE}
+                          height={PHOTO_SIZE}
+                          rx={4}
+                          fill={PAPER}
+                          stroke={BORDER}
+                        />
+                        <image
+                          href={person.photo_url ?? undefined}
+                          x={PHOTO_MARGIN}
+                          y={(CARD_HEIGHT - PHOTO_SIZE) / 2}
+                          width={PHOTO_SIZE}
+                          height={PHOTO_SIZE}
+                          preserveAspectRatio="xMidYMid slice"
+                        />
+                        <rect
+                          x={PHOTO_MARGIN}
+                          y={(CARD_HEIGHT - PHOTO_SIZE) / 2}
+                          width={PHOTO_SIZE}
+                          height={PHOTO_SIZE}
+                          rx={4}
+                          fill="none"
+                          stroke={BORDER}
+                        />
+                      </>
+                    )}
+                    <text x={textX} y={24} fontFamily="IBM Plex Sans, sans-serif" fontSize={13} fontWeight={600} fill={INK}>
                       {person.first_name} {person.last_name}
                     </text>
-                    <text x={14} y={42} fontFamily="IBM Plex Sans, sans-serif" fontSize={11} fill={INK_MUTED}>
+                    <text x={textX} y={42} fontFamily="IBM Plex Sans, sans-serif" fontSize={11} fill={INK_MUTED}>
                       {yearsOf(person)}
                       {person.occupation ? ` · ${person.occupation}` : ""}
                     </text>
@@ -364,7 +455,7 @@ export default function TreeView() {
         <span>
           <i style={{ background: secondary }} /> Conjoint·e / par alliance
         </span>
-        <span className="muted">Molette pour zoomer · glisser pour se déplacer · cliquer une fiche pour la centrer</span>
+        <span className="muted">Molette ou boutons +/− pour zoomer · glisser pour se déplacer · cliquer une fiche pour l'ouvrir</span>
       </div>
     </div>
   );
