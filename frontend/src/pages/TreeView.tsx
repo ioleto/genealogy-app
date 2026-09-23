@@ -7,12 +7,15 @@ import PersonPicker from "../components/PersonPicker";
 import { useTheme } from "../theme/ThemeContext";
 import "./TreeView.css";
 
-const SLOT_WIDTH = 200;
+const SLOT_WIDTH = 216;
 const ROW_HEIGHT = 168;
-const CARD_WIDTH = 168;
+const CARD_WIDTH = 188;
 const CARD_HEIGHT = 60;
 const PHOTO_SIZE = 40;
 const PHOTO_MARGIN = 10;
+const RIGHT_PADDING = 10;
+const NAME_CHAR_WIDTH = 7.4; // estimation moyenne pour IBM Plex Sans 13px gras
+const SUB_CHAR_WIDTH = 6.1; // estimation moyenne pour IBM Plex Sans 11px normal
 
 const INK = "#211f1c";
 const INK_MUTED = "#6b6862";
@@ -21,6 +24,16 @@ const PAPER_RAISED = "#fbfbf9";
 const BORDER = "rgba(33, 31, 28, 0.22)";
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 2.4;
+
+// SVG ne fait pas de retour à la ligne ni d'ellipsis automatique : on estime
+// la largeur du texte pour tronquer si besoin, puis on force la largeur
+// exacte via textLength/lengthAdjust — un filet de sécurité si l'estimation
+// était légèrement optimiste, pour ne JAMAIS déborder de la fiche.
+function fitText(text: string, maxWidth: number, avgCharWidth: number): { text: string; truncated: boolean } {
+  if (text.length * avgCharWidth <= maxWidth) return { text, truncated: false };
+  const maxChars = Math.max(1, Math.floor(maxWidth / avgCharWidth) - 1);
+  return { text: text.slice(0, maxChars).trimEnd() + "…", truncated: true };
+}
 
 export default function TreeView() {
   const navigate = useNavigate();
@@ -39,6 +52,39 @@ export default function TreeView() {
   const viewRef = useRef(view);
   const rafRef = useRef<number | null>(null);
   const dragState = useRef<{ startX: number; startY: number; viewX: number; viewY: number } | null>(null);
+
+  const [menu, setMenu] = useState<{ personId: string; x: number; y: number } | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function openMenu(personId: string, clientX: number, clientY: number) {
+    setMenu({ personId, x: Math.min(clientX, window.innerWidth - 220), y: Math.min(clientY, window.innerHeight - 180) });
+  }
+
+  useEffect(() => {
+    if (!menu) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menu]);
+
+  useEffect(() => {
+    if (!lightboxUrl) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setLightboxUrl(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [lightboxUrl]);
 
   function applyTransformNow() {
     if (panGroupRef.current) {
@@ -91,6 +137,11 @@ export default function TreeView() {
   }, []);
 
   // Non-passive wheel listener so we can preventDefault (zoom instead of page scroll).
+  // Dépend de `loading` : au tout premier rendu (pendant le chargement), le
+  // div de la carte n'existe pas encore, donc `viewportRef.current` est nul —
+  // avec un tableau de dépendances vide, cet effet ne se relançait jamais
+  // une fois le div réellement monté, et la molette restait inerte alors
+  // que les boutons +/- (évalués à chaque rendu) fonctionnaient bien.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -104,7 +155,7 @@ export default function TreeView() {
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [loading]);
 
   function zoomBy(factor: number) {
     const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, viewRef.current.scale * factor));
@@ -387,12 +438,19 @@ export default function TreeView() {
                 const isRoot = n.personId === rootId;
                 const hasPhoto = !!person.photo_url;
                 const textX = hasPhoto ? PHOTO_MARGIN * 2 + PHOTO_SIZE : 14;
+                const availableWidth = CARD_WIDTH - textX - RIGHT_PADDING;
+                const nameFit = fitText(`${person.first_name} ${person.last_name}`, availableWidth, NAME_CHAR_WIDTH);
+                const subLine = `${yearsOf(person)}${person.occupation ? ` · ${person.occupation}` : ""}`;
+                const subFit = fitText(subLine, availableWidth, SUB_CHAR_WIDTH);
                 return (
                   <g
                     key={n.personId}
                     transform={`translate(${cx - CARD_WIDTH / 2}, ${cy - CARD_HEIGHT / 2})`}
                     className="tree-node"
-                    onClick={() => navigate(`/fiches/${n.personId}`)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openMenu(n.personId, e.clientX, e.clientY);
+                    }}
                   >
                     <rect
                       width={CARD_WIDTH}
@@ -433,12 +491,28 @@ export default function TreeView() {
                         />
                       </>
                     )}
-                    <text x={textX} y={24} fontFamily="IBM Plex Sans, sans-serif" fontSize={13} fontWeight={600} fill={INK}>
-                      {person.first_name} {person.last_name}
+                    <text
+                      x={textX}
+                      y={24}
+                      fontFamily="IBM Plex Sans, sans-serif"
+                      fontSize={13}
+                      fontWeight={600}
+                      fill={INK}
+                      textLength={nameFit.truncated ? availableWidth : undefined}
+                      lengthAdjust={nameFit.truncated ? "spacingAndGlyphs" : undefined}
+                    >
+                      {nameFit.text}
                     </text>
-                    <text x={textX} y={42} fontFamily="IBM Plex Sans, sans-serif" fontSize={11} fill={INK_MUTED}>
-                      {yearsOf(person)}
-                      {person.occupation ? ` · ${person.occupation}` : ""}
+                    <text
+                      x={textX}
+                      y={42}
+                      fontFamily="IBM Plex Sans, sans-serif"
+                      fontSize={11}
+                      fill={INK_MUTED}
+                      textLength={subFit.truncated ? availableWidth : undefined}
+                      lengthAdjust={subFit.truncated ? "spacingAndGlyphs" : undefined}
+                    >
+                      {subFit.text}
                     </text>
                   </g>
                 );
@@ -455,8 +529,58 @@ export default function TreeView() {
         <span>
           <i style={{ background: secondary }} /> Conjoint·e / par alliance
         </span>
-        <span className="muted">Molette ou boutons +/− pour zoomer · glisser pour se déplacer · cliquer une fiche pour l'ouvrir</span>
+        <span className="muted">Molette ou boutons +/− pour zoomer · glisser pour se déplacer · cliquer une fiche pour les actions</span>
       </div>
+
+      {menu && (() => {
+        const person = personById.get(menu.personId);
+        if (!person) return null;
+        return (
+          <div ref={menuRef} className="tree-context-menu" style={{ left: menu.x, top: menu.y }}>
+            <div className="tree-context-menu-title">
+              {person.first_name} {person.last_name}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setRootId(menu.personId);
+                setMenu(null);
+              }}
+            >
+              Centrer l'arbre ici
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                navigate(`/fiches/${menu.personId}`);
+                setMenu(null);
+              }}
+            >
+              Voir la fiche
+            </button>
+            {person.photo_url && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLightboxUrl(person.photo_url);
+                  setMenu(null);
+                }}
+              >
+                Voir la photo
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {lightboxUrl && (
+        <div className="photo-lightbox" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="" onClick={(e) => e.stopPropagation()} />
+          <button className="photo-lightbox-close" type="button" onClick={() => setLightboxUrl(null)} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
