@@ -30,6 +30,13 @@ React. Pensée pour un déploiement en une fois depuis Portainer.
   normalement — c'est facultatif, pas une contrainte de rangement.
 - **Sélection multiple** dans la liste des fiches : suppression groupée ou
   réassignation groupée à une famille.
+- **Documents** : chaque fiche peut recevoir des pièces jointes (actes,
+  scans, PDF, images, 20 Mo maximum), consultables et supprimables
+  directement depuis la fiche.
+- **Filiations multiples** : une fiche peut avoir plusieurs liens de
+  parenté déclarés (utile pour les parents biologiques/adoptifs), chacun
+  modifiable ou retirable indépendamment — et les parents comme les enfants
+  sont cliquables pour naviguer directement vers leur propre fiche.
 - **Paramètres d'apparence** : couleur principale et secondaire, avec
   quelques palettes suggérées.
 

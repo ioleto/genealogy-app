@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint,
+    Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,6 +55,27 @@ class User(Base):
     theme_secondary_color: Mapped[str | None] = mapped_column(String(9), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Document(Base):
+    """Fichier (scan, acte, photo d'époque, PDF...) rattaché à une fiche."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    person_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    @property
+    def url(self) -> str:
+        return f"/uploads/{self.stored_path}"
 
 
 class Family(Base):

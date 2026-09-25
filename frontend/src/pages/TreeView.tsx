@@ -8,9 +8,9 @@ import { useTheme } from "../theme/ThemeContext";
 import "./TreeView.css";
 
 const SLOT_WIDTH = 216;
-const ROW_HEIGHT = 168;
+const ROW_HEIGHT = 182;
 const CARD_WIDTH = 188;
-const CARD_HEIGHT = 60;
+const CARD_HEIGHT = 74;
 const PHOTO_SIZE = 40;
 const PHOTO_MARGIN = 10;
 const RIGHT_PADDING = 10;
@@ -136,6 +136,17 @@ export default function TreeView() {
     };
   }, []);
 
+  function zoomAt(px: number, py: number, factor: number) {
+    const v = viewRef.current;
+    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
+    // Garde le point (px, py) — en coordonnées écran relatives au canevas —
+    // immobile pendant le zoom, plutôt que de zoomer depuis l'origine et
+    // laisser tout « fuir » sous le curseur.
+    const worldX = (px - v.x) / v.scale;
+    const worldY = (py - v.y) / v.scale;
+    return { x: px - worldX * nextScale, y: py - worldY * nextScale, scale: nextScale };
+  }
+
   // Non-passive wheel listener so we can preventDefault (zoom instead of page scroll).
   // Dépend de `loading` : au tout premier rendu (pendant le chargement), le
   // div de la carte n'existe pas encore, donc `viewportRef.current` est nul —
@@ -147,9 +158,10 @@ export default function TreeView() {
     if (!el) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
+      const rect = el!.getBoundingClientRect();
       const delta = -e.deltaY * 0.0015;
-      const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, viewRef.current.scale * (1 + delta)));
-      viewRef.current = { ...viewRef.current, scale: nextScale };
+      const next = zoomAt(e.clientX - rect.left, e.clientY - rect.top, 1 + delta);
+      viewRef.current = next;
       applyTransformNow();
       scheduleStateSync();
     }
@@ -158,8 +170,10 @@ export default function TreeView() {
   }, [loading]);
 
   function zoomBy(factor: number) {
-    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, viewRef.current.scale * factor));
-    setViewNow({ x: viewRef.current.x, y: viewRef.current.y, scale: nextScale });
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const px = rect ? rect.width / 2 : 0;
+    const py = rect ? rect.height / 2 : 0;
+    setViewNow(zoomAt(px, py, factor));
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -440,8 +454,10 @@ export default function TreeView() {
                 const textX = hasPhoto ? PHOTO_MARGIN * 2 + PHOTO_SIZE : 14;
                 const availableWidth = CARD_WIDTH - textX - RIGHT_PADDING;
                 const nameFit = fitText(`${person.first_name} ${person.last_name}`, availableWidth, NAME_CHAR_WIDTH);
-                const subLine = `${yearsOf(person)}${person.occupation ? ` · ${person.occupation}` : ""}`;
-                const subFit = fitText(subLine, availableWidth, SUB_CHAR_WIDTH);
+                const datesFit = fitText(yearsOf(person), availableWidth, SUB_CHAR_WIDTH);
+                const occupationFit = person.occupation
+                  ? fitText(person.occupation, availableWidth, SUB_CHAR_WIDTH)
+                  : null;
                 return (
                   <g
                     key={n.personId}
@@ -493,7 +509,7 @@ export default function TreeView() {
                     )}
                     <text
                       x={textX}
-                      y={24}
+                      y={22}
                       fontFamily="IBM Plex Sans, sans-serif"
                       fontSize={13}
                       fontWeight={600}
@@ -505,15 +521,28 @@ export default function TreeView() {
                     </text>
                     <text
                       x={textX}
-                      y={42}
+                      y={40}
                       fontFamily="IBM Plex Sans, sans-serif"
                       fontSize={11}
                       fill={INK_MUTED}
-                      textLength={subFit.truncated ? availableWidth : undefined}
-                      lengthAdjust={subFit.truncated ? "spacingAndGlyphs" : undefined}
+                      textLength={datesFit.truncated ? availableWidth : undefined}
+                      lengthAdjust={datesFit.truncated ? "spacingAndGlyphs" : undefined}
                     >
-                      {subFit.text}
+                      {datesFit.text}
                     </text>
+                    {occupationFit && (
+                      <text
+                        x={textX}
+                        y={57}
+                        fontFamily="IBM Plex Sans, sans-serif"
+                        fontSize={11}
+                        fill={INK_MUTED}
+                        textLength={occupationFit.truncated ? availableWidth : undefined}
+                        lengthAdjust={occupationFit.truncated ? "spacingAndGlyphs" : undefined}
+                      >
+                        {occupationFit.text}
+                      </text>
+                    )}
                   </g>
                 );
               })}

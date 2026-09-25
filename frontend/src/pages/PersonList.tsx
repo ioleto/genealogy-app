@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { deletePerson, listFamilies, listPersons, updatePerson } from "../api/client";
 import type { Family, PersonSummary } from "../api/types";
@@ -22,15 +22,27 @@ export default function PersonList() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
+  const requestIdRef = useRef(0);
 
   const canEdit = user?.role === "admin" || user?.role === "editor";
   const familyById = useMemo(() => new Map(families.map((f) => [f.id, f])), [families]);
+  // Une recherche par nom cherche dans TOUTE la base : un filtre famille
+  // resté actif sans qu'on s'en souvienne ne doit jamais faire croire que
+  // « la recherche ne trouve rien », alors que c'est le filtre qui exclut
+  // discrètement la personne cherchée.
+  const searchIgnoresFamilyFilter = search.trim().length > 0 && familyFilter !== "";
 
   function reload() {
     setLoading(true);
-    return listPersons(search || undefined, familyFilter || undefined)
-      .then(setPersons)
-      .finally(() => setLoading(false));
+    const effectiveFamily = search.trim() ? undefined : familyFilter || undefined;
+    const requestId = ++requestIdRef.current;
+    return listPersons(search || undefined, effectiveFamily)
+      .then((data) => {
+        if (requestId === requestIdRef.current) setPersons(data);
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) setLoading(false);
+      });
   }
 
   useEffect(() => {
@@ -125,6 +137,13 @@ export default function PersonList() {
           ))}
         </select>
       </div>
+
+      {searchIgnoresFamilyFilter && (
+        <p className="muted" style={{ fontSize: "0.82rem", marginTop: "-0.6rem", marginBottom: "0.9rem" }}>
+          Recherche sur toutes les familles (le filtre « {familyById.get(familyFilter)?.name ?? familyFilter} » est
+          ignoré tant qu'une recherche est en cours).
+        </p>
+      )}
 
       {canEdit && selected.size > 0 && (
         <div className="bulk-bar card">

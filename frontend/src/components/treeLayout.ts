@@ -133,33 +133,48 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     const unionId = parentUnionByChild.get(personId);
     const union = unionId ? unionsById.get(unionId) : undefined;
 
+    let personX: number;
+
     if (!union) {
-      const x = ancestorLeafX++;
-      if (personId !== rootId) {
-        ancestorNodes.push({ personId, x, generation, isBlood: true });
+      personX = ancestorLeafX++;
+    } else {
+      const parentIds = [union.partner1_id, union.partner2_id].filter((p): p is string => !!p);
+      const parentCenters = parentIds.map((pid) => layoutAncestor(pid, generation - 1));
+      personX = parentCenters.length > 0 ? average(parentCenters) : ancestorLeafX++;
+
+      if (parentCenters.length === 2) {
+        ancestorSpouseLines.push({ x1: parentCenters[0], x2: parentCenters[1], generation: generation - 1 });
       }
-      return x;
+      ancestorFamilyEdges.push({
+        unionMidX: average(parentCenters.length > 0 ? parentCenters : [personX]),
+        unionGeneration: generation - 1,
+        childrenX: [personX],
+        childGeneration: generation,
+      });
     }
-
-    const parentIds = [union.partner1_id, union.partner2_id].filter((p): p is string => !!p);
-    const parentCenters = parentIds.map((pid) => layoutAncestor(pid, generation - 1));
-    const personX = parentCenters.length > 0 ? average(parentCenters) : ancestorLeafX++;
-
-    if (parentCenters.length === 2) {
-      ancestorSpouseLines.push({ x1: parentCenters[0], x2: parentCenters[1], generation: generation - 1 });
-    }
-    ancestorFamilyEdges.push({
-      unionMidX: average(parentCenters.length > 0 ? parentCenters : [personX]),
-      unionGeneration: generation - 1,
-      childrenX: [personX],
-      childGeneration: generation,
-    });
 
     if (personId !== rootId) {
       ancestorNodes.push({ personId, x: personX, generation, isBlood: true });
     } else {
       ancestorRootX = personX;
     }
+
+    // Un ancêtre peut avoir eu plusieurs unions (remariage) — celle qui a
+    // produit l'enfant qu'on remonte n'est qu'une partie de l'histoire. Sans
+    // ceci, tout conjoint « secondaire » d'un ancêtre — et donc TOUTE sa
+    // propre lignée, même connue dans la base — disparaissait silencieusement
+    // dès qu'on remontait plus haut que lui. Le root est exclu : ses propres
+    // unions sont déjà traitées en entier par la branche descendante.
+    if (personId !== rootId) {
+      const ownUnions = (unionsByPartner.get(personId) ?? []).filter((u) => unionsById.has(u.id));
+      for (const u of ownUnions) {
+        const spouseId = u.partner1_id === personId ? u.partner2_id : u.partner1_id;
+        if (!spouseId || ancestorVisited.has(spouseId)) continue;
+        const spouseX = layoutAncestor(spouseId, generation);
+        ancestorSpouseLines.push({ x1: personX, x2: spouseX, generation });
+      }
+    }
+
     return personX;
   }
 

@@ -45,6 +45,16 @@ export interface Family {
   created_at: string;
 }
 
+export interface PersonDocument {
+  id: string;
+  person_id: string;
+  filename: string;
+  url: string;
+  content_type: string | null;
+  size_bytes: number;
+  created_at: string;
+}
+
 export interface UnionRecord {
   id: string;
   partner1_id: string;

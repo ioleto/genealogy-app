@@ -3,6 +3,7 @@ import type {
   Family,
   Filiation,
   Person,
+  PersonDocument,
   PersonInput,
   PersonSummary,
   TreeGraph,
@@ -176,6 +177,27 @@ export async function renameFamily(id: string, name: string): Promise<Family> {
 
 export async function deleteFamily(id: string): Promise<void> {
   await api.delete(`/api/families/${id}`);
+}
+
+// ---------- Documents ----------
+
+export async function listDocuments(personId: string): Promise<PersonDocument[]> {
+  const res = await api.get<PersonDocument[]>("/api/documents", { params: { person_id: personId } });
+  return res.data;
+}
+
+export async function uploadDocument(personId: string, file: File): Promise<PersonDocument> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await api.post<PersonDocument>("/api/documents", formData, {
+    params: { person_id: personId },
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  await api.delete(`/api/documents/${id}`);
 }
 
 // ---------- Unions ----------

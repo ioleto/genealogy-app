@@ -46,6 +46,20 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+# ---------- Document ----------
+
+class DocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    person_id: str
+    filename: str
+    url: str
+    content_type: str | None = None
+    size_bytes: int
+    created_at: datetime
+
+
 # ---------- Family ----------
 
 class FamilyCreate(BaseModel):

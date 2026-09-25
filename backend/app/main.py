@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import AsyncSessionLocal, Base, add_missing_columns, engine
 from app.models import User, UserRole
-from app.routers import auth, families, gedcom, persons, tree, unions, uploads, users
+from app.routers import auth, documents, families, gedcom, persons, tree, unions, uploads, users
 from app.security import hash_password
 
 settings = get_settings()
@@ -54,6 +54,7 @@ app.include_router(users.router)
 app.include_router(persons.router)
 app.include_router(unions.router)
 app.include_router(families.router)
+app.include_router(documents.router)
 app.include_router(tree.router)
 app.include_router(uploads.router)
 app.include_router(gedcom.router)

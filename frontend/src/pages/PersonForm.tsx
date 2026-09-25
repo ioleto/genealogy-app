@@ -1,19 +1,22 @@
 import { FormEvent, ChangeEvent, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addChild,
   createPerson,
   createUnion,
+  deleteDocument,
   deletePerson,
   deleteUnion,
   extractErrorMessage,
   getPerson,
   getTreeGraph,
+  listDocuments,
   removeChild,
   updatePerson,
+  uploadDocument,
   uploadPhoto,
 } from "../api/client";
-import type { Person, PersonInput, PersonSummary, TreeGraph, UnionRecord, UnionType } from "../api/types";
+import type { Person, PersonDocument, PersonInput, PersonSummary, TreeGraph, UnionRecord, UnionType } from "../api/types";
 import PersonPicker from "../components/PersonPicker";
 import FamilySelect from "../components/FamilySelect";
 import { useAuth } from "../auth/AuthContext";
@@ -158,8 +161,7 @@ export default function PersonForm() {
   const myUnions: UnionRecord[] = id
     ? (graph?.unions ?? []).filter((u) => u.partner1_id === id || u.partner2_id === id)
     : [];
-  const myParentFiliation = id ? (graph?.filiations ?? []).find((f) => f.child_id === id) : undefined;
-  const parentUnion = myParentFiliation ? graph?.unions.find((u) => u.id === myParentFiliation.union_id) : undefined;
+  const myParentFiliations = id ? (graph?.filiations ?? []).filter((f) => f.child_id === id) : [];
 
   return (
     <div className="page">
@@ -353,7 +355,8 @@ export default function PersonForm() {
           <ParentsSection
             personId={id}
             personById={personById}
-            parentUnion={parentUnion}
+            parentFiliations={myParentFiliations}
+            unions={graph?.unions ?? []}
             canEdit={canEdit}
             onChange={refreshGraph}
           />
@@ -365,6 +368,7 @@ export default function PersonForm() {
             canEdit={canEdit}
             onChange={refreshGraph}
           />
+          <DocumentsSection personId={id} canEdit={canEdit} />
         </>
       )}
     </div>
@@ -376,19 +380,24 @@ export default function PersonForm() {
 function ParentsSection({
   personId,
   personById,
-  parentUnion,
+  parentFiliations,
+  unions,
   canEdit,
   onChange,
 }: {
   personId: string;
   personById: Map<string, Person>;
-  parentUnion: UnionRecord | undefined;
+  parentFiliations: TreeGraph["filiations"];
+  unions: UnionRecord[];
   canEdit: boolean;
   onChange: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [parent1, setParent1] = useState<PersonSummary | null>(null);
   const [parent2, setParent2] = useState<PersonSummary | null>(null);
+  const [unionType, setUnionType] = useState<UnionType>("marriage");
+  const [unionDate, setUnionDate] = useState("");
+  const [unionPlace, setUnionPlace] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleAddParents(e: FormEvent) {
@@ -399,10 +408,10 @@ function ParentsSection({
       const union = await createUnion({
         partner1_id: parent1.id,
         partner2_id: parent2?.id ?? null,
-        union_type: "unknown",
-        union_date: null,
+        union_type: unionType,
+        union_date: unionDate || null,
         union_date_approx: false,
-        union_place: null,
+        union_place: unionPlace || null,
         end_date: null,
         end_reason: null,
         notes: null,
@@ -411,28 +420,66 @@ function ParentsSection({
       setShowForm(false);
       setParent1(null);
       setParent2(null);
+      setUnionDate("");
+      setUnionPlace("");
       onChange();
     } finally {
       setSaving(false);
     }
   }
 
+  async function handleRemove(filiationId: string) {
+    if (
+      !window.confirm(
+        "Retirer ce lien de filiation ? L'union elle-même (et d'éventuels autres enfants) n'est pas supprimée."
+      )
+    ) {
+      return;
+    }
+    await removeChild(filiationId);
+    onChange();
+  }
+
   return (
     <section className="relation-section card">
       <h2>Parents</h2>
-      {parentUnion ? (
-        <div className="relation-row">
-          <span>
-            {[parentUnion.partner1_id, parentUnion.partner2_id]
+
+      {parentFiliations.length === 0 && <p className="muted">Aucun parent renseigné.</p>}
+
+      {parentFiliations.map((f) => {
+        const union = unions.find((u) => u.id === f.union_id);
+        const parents = union
+          ? [union.partner1_id, union.partner2_id]
               .filter((x): x is string => !!x)
               .map((pid) => personById.get(pid))
               .filter((p): p is Person => !!p)
-              .map((p) => `${p.first_name} ${p.last_name}`)
-              .join(" & ") || "Parent(s) inconnu(s)"}
-          </span>
-        </div>
-      ) : canEdit ? (
-        showForm ? (
+          : [];
+        return (
+          <div className="relation-row" key={f.id}>
+            <span>
+              {parents.length > 0
+                ? parents.map((p, i) => (
+                    <span key={p.id}>
+                      {i > 0 && " & "}
+                      <Link to={`/fiches/${p.id}`} className="relation-link">
+                        {p.first_name} {p.last_name}
+                      </Link>
+                    </span>
+                  ))
+                : "Parent(s) inconnu(s)"}
+              {union?.union_date && <span className="muted"> · {union.union_date}</span>}
+            </span>
+            {canEdit && (
+              <button className="btn-ghost person-picker-clear" type="button" onClick={() => handleRemove(f.id)}>
+                Retirer
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {canEdit &&
+        (showForm ? (
           <form onSubmit={handleAddParents} className="relation-add-form">
             <div className="field">
               <label>Premier parent</label>
@@ -446,6 +493,26 @@ function ParentsSection({
                 excludeIds={[personId, ...(parent1 ? [parent1.id] : [])]}
               />
             </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Type d'union</label>
+                <select value={unionType} onChange={(e) => setUnionType(e.target.value as UnionType)}>
+                  {Object.entries(UNION_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Date d'union</label>
+                <input type="date" value={unionDate} onChange={(e) => setUnionDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="field">
+              <label>Lieu d'union</label>
+              <input value={unionPlace} onChange={(e) => setUnionPlace(e.target.value)} />
+            </div>
             <div className="relation-add-actions">
               <button className="btn btn-primary" type="submit" disabled={!parent1 || saving}>
                 Enregistrer
@@ -457,12 +524,9 @@ function ParentsSection({
           </form>
         ) : (
           <button className="btn btn-ghost" type="button" onClick={() => setShowForm(true)}>
-            + Renseigner les parents
+            + {parentFiliations.length > 0 ? "Ajouter un autre lien de filiation" : "Renseigner les parents"}
           </button>
-        )
-      ) : (
-        <p className="muted">Aucun parent renseigné.</p>
-      )}
+        ))}
     </section>
   );
 }
@@ -530,13 +594,12 @@ function UnionsSection({
 
       {unions.map((u) => {
         const otherId = u.partner1_id === personId ? u.partner2_id : u.partner1_id;
-        const other = otherId ? personById.get(otherId) : undefined;
         const children = filiations.filter((f) => f.union_id === u.id);
         return (
           <UnionBlock
             key={u.id}
             union={u}
-            otherName={other ? `${other.first_name} ${other.last_name}` : "Partenaire inconnu(e)"}
+            otherPerson={otherId ? personById.get(otherId) : undefined}
             children={children}
             personById={personById}
             unionOwnerId={personId}
@@ -594,7 +657,7 @@ function UnionsSection({
 
 function UnionBlock({
   union,
-  otherName,
+  otherPerson,
   children,
   personById,
   unionOwnerId,
@@ -603,7 +666,7 @@ function UnionBlock({
   onChange,
 }: {
   union: UnionRecord;
-  otherName: string;
+  otherPerson: Person | undefined;
   children: TreeGraph["filiations"];
   personById: Map<string, Person>;
   unionOwnerId: string;
@@ -642,7 +705,14 @@ function UnionBlock({
     <div className="union-block">
       <div className="union-block-header">
         <span>
-          <strong>{UNION_LABELS[union.union_type]}</strong> avec {otherName}
+          <strong>{UNION_LABELS[union.union_type]}</strong> avec{" "}
+          {otherPerson ? (
+            <Link to={`/fiches/${otherPerson.id}`} className="relation-link">
+              {otherPerson.first_name} {otherPerson.last_name}
+            </Link>
+          ) : (
+            "un·e partenaire inconnu·e"
+          )}
           {union.union_date && <span className="muted"> · {union.union_date}</span>}
         </span>
         {canEdit && (
@@ -658,7 +728,13 @@ function UnionBlock({
             const c = personById.get(f.child_id);
             return (
               <li key={f.id}>
-                {c ? `${c.first_name} ${c.last_name}` : "Fiche inconnue"}
+                {c ? (
+                  <Link to={`/fiches/${c.id}`} className="relation-link">
+                    {c.first_name} {c.last_name}
+                  </Link>
+                ) : (
+                  "Fiche inconnue"
+                )}
                 {canEdit && (
                   <button className="btn-ghost person-picker-clear" type="button" onClick={() => handleRemoveChild(f.id)}>
                     Retirer
@@ -687,5 +763,99 @@ function UnionBlock({
           </button>
         ))}
     </div>
+  );
+}
+
+// ---------- Documents ----------
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function DocumentsSection({ personId, canEdit }: { personId: string; canEdit: boolean }) {
+  const [documents, setDocuments] = useState<PersonDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reload() {
+    setLoading(true);
+    return listDocuments(personId)
+      .then(setDocuments)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personId]);
+
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await uploadDocument(personId, file);
+      await reload();
+    } catch (err) {
+      setError(extractErrorMessage(err, "Le dépôt du document a échoué."));
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm("Supprimer définitivement ce document ?")) return;
+    await deleteDocument(id);
+    await reload();
+  }
+
+  return (
+    <section className="relation-section card">
+      <h2>Documents</h2>
+      <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+        Actes, scans, photos d'époque… (PDF, image, Word ou texte, 20 Mo maximum)
+      </p>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      {loading && <p className="muted">Chargement…</p>}
+      {!loading && documents.length === 0 && <p className="muted">Aucun document déposé.</p>}
+
+      {!loading && documents.length > 0 && (
+        <ul className="documents-list">
+          {documents.map((d) => (
+            <li key={d.id}>
+              <a href={d.url} target="_blank" rel="noreferrer" className="relation-link">
+                {d.filename}
+              </a>
+              <span className="muted documents-meta">{formatFileSize(d.size_bytes)}</span>
+              {canEdit && (
+                <button className="btn-ghost person-picker-clear" type="button" onClick={() => handleDelete(d.id)}>
+                  Supprimer
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canEdit && (
+        <label className="btn btn-ghost" style={{ cursor: "pointer", marginTop: "0.8rem", display: "inline-flex" }}>
+          {uploading ? "Envoi…" : "+ Déposer un document"}
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.txt"
+            style={{ display: "none" }}
+            disabled={uploading}
+            onChange={handleUpload}
+          />
+        </label>
+      )}
+    </section>
   );
 }

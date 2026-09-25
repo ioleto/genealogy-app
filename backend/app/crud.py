@@ -191,6 +191,48 @@ async def get_full_graph(db: AsyncSession) -> tuple[list[models.Person], list[mo
     return list(persons), list(unions), list(filiations)
 
 
+# ---------- Documents ----------
+
+async def create_document(
+    db: AsyncSession,
+    person_id: str,
+    filename: str,
+    stored_path: str,
+    content_type: str | None,
+    size_bytes: int,
+    uploaded_by: str | None,
+) -> models.Document:
+    doc = models.Document(
+        person_id=person_id,
+        filename=filename,
+        stored_path=stored_path,
+        content_type=content_type,
+        size_bytes=size_bytes,
+        uploaded_by=uploaded_by,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return doc
+
+
+async def list_documents(db: AsyncSession, person_id: str) -> list[models.Document]:
+    result = await db.execute(
+        select(models.Document).where(models.Document.person_id == person_id).order_by(models.Document.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def get_document(db: AsyncSession, document_id: str) -> models.Document | None:
+    result = await db.execute(select(models.Document).where(models.Document.id == document_id))
+    return result.scalar_one_or_none()
+
+
+async def delete_document(db: AsyncSession, doc: models.Document) -> None:
+    await db.delete(doc)
+    await db.commit()
+
+
 # ---------- Families ----------
 
 async def list_families(db: AsyncSession) -> list[models.Family]:
