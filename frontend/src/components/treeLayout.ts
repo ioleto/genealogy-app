@@ -219,6 +219,16 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   }
 
   const SLOT_GAP = 1.05; // 216 px pour des cartes de 188 px : 28 px d'air
+  const parentAlignedNodes = new Set<string>();
+  for (const union of graph.unions) {
+    for (const generation of rows.keys()) {
+      const children = (childrenByUnion.get(union.id) ?? [])
+        .map((childId) => nodeAt.get(`${childId}:${generation + 1}`))
+        .filter((node): node is PersonNodePos => !!node);
+      if (children.length === 1) parentAlignedNodes.add(`${children[0].personId}:${children[0].generation}`);
+    }
+  }
+
   for (let iteration = 0; iteration < 24; iteration += 1) {
     const targets = new Map<PersonNodePos, number[]>();
     const addTarget = (node: PersonNodePos | undefined, x: number) => {
@@ -270,12 +280,19 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
 
     for (const row of rows.values()) {
       row.sort((a, b) => a.x - b.x);
-      const averageBefore = average(row.map((node) => node.x));
       for (let index = 1; index < row.length; index += 1) {
-        row[index].x = Math.max(row[index].x, row[index - 1].x + SLOT_GAP);
+        const left = row[index - 1];
+        const right = row[index];
+        const minimumRight = left.x + SLOT_GAP;
+        if (right.x >= minimumRight) continue;
+
+        const leftIsAnchored = parentAlignedNodes.has(`${left.personId}:${left.generation}`);
+        const rightIsAnchored = parentAlignedNodes.has(`${right.personId}:${right.generation}`);
+        // Un enfant relié à ses propres parents garde son aplomb. Une fiche
+        // libre (souvent son/sa conjoint·e) s'écarte à sa place.
+        if (rightIsAnchored && !leftIsAnchored) left.x = right.x - SLOT_GAP;
+        else right.x = minimumRight;
       }
-      const shift = averageBefore - average(row.map((node) => node.x));
-      for (const node of row) node.x += shift;
     }
   }
 
