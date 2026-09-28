@@ -14,6 +14,7 @@ export interface SpouseLine {
 }
 
 export interface FamilyEdge {
+  unionId: string;
   unionMidX: number;
   unionGeneration: number;
   childrenX: number[];
@@ -50,7 +51,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   const unionsById = new Map<string, UnionRecord>(graph.unions.map((u) => [u.id, u]));
 
   const nodes: PersonNodePos[] = [];
-  const spouseLines: SpouseLine[] = [];
+  let spouseLines: SpouseLine[] = [];
   const familyEdges: FamilyEdge[] = [];
 
   // ---------- Descendant side (generation >= 0) ----------
@@ -72,11 +73,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     descendantVisited.add(personId);
 
     const unions = (unionsByPartner.get(personId) ?? []).filter((u) => unionsById.has(u.id));
-    // L'ancre sert à placer la personne qui porte l'union ; lineX est la
-    // position réelle de son/sa partenaire. Les distinguer est essentiel :
-    // auparavant les deux fiches étaient posées au même endroit dès qu'elles
-    // avaient des enfants, d'où un raccord qui semblait sortir à droite.
-    const attachments: Array<{ anchorX: number; lineX?: number }> = [];
+    const attachments: Array<{ anchorX: number }> = [];
     const familyEdgesForPerson: Array<{ edge: FamilyEdge; spouseX?: number }> = [];
 
     for (const union of unions) {
@@ -88,7 +85,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
           descendantVisited.add(spouseId);
           const spouseX = nextLeafX++;
           nodes.push({ personId: spouseId, x: spouseX, generation, isBlood: false });
-          attachments.push({ anchorX: spouseX - 0.5, lineX: spouseX });
+          attachments.push({ anchorX: spouseX - 0.5 });
         }
         continue;
       }
@@ -96,6 +93,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
       const childCenters = childIds.map((cid) => layoutDescendant(cid, generation + 1));
       const unionMidX = (Math.min(...childCenters) + Math.max(...childCenters)) / 2;
       const edge: FamilyEdge = {
+        unionId: union.id,
         unionMidX,
         unionGeneration: generation,
         childrenX: childCenters,
@@ -107,7 +105,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
         descendantVisited.add(spouseId);
         const spouseX = unionMidX + 0.5;
         nodes.push({ personId: spouseId, x: spouseX, generation, isBlood: false });
-        attachments.push({ anchorX: unionMidX, lineX: spouseX });
+        attachments.push({ anchorX: unionMidX });
         familyEdgesForPerson.push({ edge, spouseX });
       } else {
         attachments.push({ anchorX: unionMidX });
@@ -117,10 +115,6 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
 
     const personX = attachments.length > 0 ? average(attachments.map((attachment) => attachment.anchorX)) : nextLeafX++;
     nodes.push({ personId, x: personX, generation, isBlood: true });
-    for (const attachment of attachments) {
-      const x2 = attachment.lineX ?? attachment.anchorX;
-      if (x2 !== personX) spouseLines.push({ x1: personX, x2, generation });
-    }
     for (const { edge, spouseX } of familyEdgesForPerson) {
       // La descente part toujours du milieu géométrique du couple, pas du
       // milieu de la fratrie. Le trait vertical est donc centré entre les
@@ -134,7 +128,6 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
 
   // ---------- Ancestor side (generation < 0), laid out independently then aligned to rootX ----------
   const ancestorNodes: PersonNodePos[] = [];
-  const ancestorSpouseLines: SpouseLine[] = [];
   const ancestorFamilyEdges: FamilyEdge[] = [];
   let ancestorLeafX = 0;
   const ancestorVisited = new Set<string>();
@@ -158,10 +151,8 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
       const parentCenters = parentIds.map((pid) => layoutAncestor(pid, generation - 1));
       personX = parentCenters.length > 0 ? average(parentCenters) : ancestorLeafX++;
 
-      if (parentCenters.length === 2) {
-        ancestorSpouseLines.push({ x1: parentCenters[0], x2: parentCenters[1], generation: generation - 1 });
-      }
       ancestorFamilyEdges.push({
+        unionId: union.id,
         unionMidX: average(parentCenters.length > 0 ? parentCenters : [personX]),
         unionGeneration: generation - 1,
         childrenX: [personX],
@@ -187,7 +178,6 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
         const spouseId = u.partner1_id === personId ? u.partner2_id : u.partner1_id;
         if (!spouseId || ancestorVisited.has(spouseId)) continue;
         const spouseX = layoutAncestor(spouseId, generation);
-        ancestorSpouseLines.push({ x1: personX, x2: spouseX, generation });
       }
     }
 
@@ -198,9 +188,32 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   const delta = rootX - ancestorRootX;
 
   for (const n of ancestorNodes) nodes.push({ ...n, x: n.x + delta });
-  for (const l of ancestorSpouseLines) spouseLines.push({ ...l, x1: l.x1 + delta, x2: l.x2 + delta });
   for (const e of ancestorFamilyEdges)
     familyEdges.push({ ...e, unionMidX: e.unionMidX + delta, childrenX: e.childrenX.map((x) => x + delta) });
+
+  // Les traits sont dérivés des fiches effectivement affichées. Ne jamais
+  // réutiliser une ancienne ancre de mise en page : elle peut être déplacée
+  // par une autre union et produisait les prolongements visibles à droite.
+  const nodeAt = new Map(nodes.map((node) => [`${node.personId}:${node.generation}`, node]));
+  spouseLines = [];
+  for (const union of graph.unions) {
+    if (!union.partner2_id) continue;
+    for (const generation of new Set(nodes.map((node) => node.generation))) {
+      const partner1 = nodeAt.get(`${union.partner1_id}:${generation}`);
+      const partner2 = nodeAt.get(`${union.partner2_id}:${generation}`);
+      if (partner1 && partner2) {
+        spouseLines.push({ x1: partner1.x, x2: partner2.x, generation });
+      }
+    }
+  }
+  for (const edge of familyEdges) {
+    const union = unionsById.get(edge.unionId);
+    if (!union) continue;
+    const partner1 = nodeAt.get(`${union.partner1_id}:${edge.unionGeneration}`);
+    const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${edge.unionGeneration}`) : undefined;
+    if (partner1 && partner2) edge.unionMidX = (partner1.x + partner2.x) / 2;
+    else if (partner1) edge.unionMidX = partner1.x;
+  }
 
   return { nodes, spouseLines, familyEdges };
 }
