@@ -7,8 +7,6 @@ import PersonPicker from "../components/PersonPicker";
 import { formatPersonName, useTheme } from "../theme/ThemeContext";
 import "./TreeView.css";
 
-const SLOT_WIDTH = 216;
-const ROW_HEIGHT = 182;
 const CARD_WIDTH = 188;
 const CARD_HEIGHT = 74;
 const PHOTO_SIZE = 40;
@@ -121,15 +119,6 @@ export default function TreeView() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Recentre la vue à chaque changement de personne centrale : sans ça, la
-  // position de défilement précédente restait appliquée et la nouvelle
-  // fiche centrée pouvait se retrouver hors champ, donnant l'impression que
-  // le clic n'avait rien fait.
-  useEffect(() => {
-    setViewNow({ x: 0, y: 0, scale: 1 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootId]);
-
   useEffect(() => {
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -194,13 +183,44 @@ export default function TreeView() {
 
   const personById = useMemo(() => new Map<string, Person>((graph?.persons ?? []).map((p) => [p.id, p])), [graph]);
 
-  const layout = useMemo(() => {
-    if (!graph || !rootId) return null;
-    return computeTreeLayout(graph, rootId);
+  const { layout, layoutError } = useMemo(() => {
+    if (!graph || !rootId) return { layout: null, layoutError: null };
+    try {
+      return { layout: computeTreeLayout(graph, rootId), layoutError: null };
+    } catch (err) {
+      console.error("Impossible de calculer la disposition de l'arbre", err);
+      return {
+        layout: null,
+        layoutError: "Certaines relations généalogiques ne peuvent pas être représentées dans l'arbre. Vérifiez les filiations concernées.",
+      };
+    }
   }, [graph, rootId]);
 
+  function centeredView() {
+    const focusedNode = layout?.nodes.find((node) => node.isFocus)
+      ?? layout?.nodes.find((node) => node.personId === rootId);
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    if (!focusedNode || !viewport) return null;
+    // The graph group itself has a fixed 48 px margin around the layout.
+    return {
+      x: viewport.width / 2 - (focusedNode.x + 48),
+      y: viewport.height / 2 - (focusedNode.y + 48),
+      scale: 1,
+    };
+  }
+
+  // A family graph may put the focused card anywhere in its coordinate space.
+  // Center that exact occurrence (including a duplicated pedigree occurrence),
+  // rather than assuming the graph starts at the origin.
+  useEffect(() => {
+    const next = centeredView();
+    if (next) setViewNow(next);
+    // `centeredView` intentionally reads the current viewport ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, rootId]);
+
   function recenter() {
-    setViewNow({ x: 0, y: 0, scale: 1 });
+    setViewNow(centeredView() ?? { x: 0, y: 0, scale: 1 });
   }
 
   function yearsOf(p: Person): string {
@@ -339,9 +359,6 @@ export default function TreeView() {
     );
   }
 
-  const minGen = layout ? Math.min(0, ...layout.nodes.map((n) => n.generation)) : 0;
-  const rowOffset = -minGen * ROW_HEIGHT + CARD_HEIGHT;
-
   return (
     <div className="tree-page">
       <div className="tree-toolbar">
@@ -384,9 +401,9 @@ export default function TreeView() {
         </div>
       </div>
 
-      {error && (
+      {(error ?? layoutError) && (
         <div className="error-banner" style={{ margin: "0 1.6rem" }}>
-          {error}
+          {error ?? layoutError}
         </div>
       )}
 
@@ -400,54 +417,24 @@ export default function TreeView() {
       >
         <svg ref={svgRef} width="100%" height="100%">
           <g ref={panGroupRef} transform={`translate(${view.x}, ${view.y}) scale(${view.scale})`}>
-            <g ref={groupRef} transform={`translate(400, ${rowOffset})`}>
-              {layout?.spouseLines.map((l, i) => (
+            <g ref={groupRef} transform="translate(48, 48)">
+              {layout?.segments.map((segment) => (
                 <line
-                  key={`sl-${i}`}
-                  x1={l.x1 * SLOT_WIDTH}
-                  x2={l.x2 * SLOT_WIDTH}
-                  y1={l.generation * ROW_HEIGHT}
-                  y2={l.generation * ROW_HEIGHT}
+                  key={segment.id}
+                  x1={segment.x1}
+                  x2={segment.x2}
+                  y1={segment.y1}
+                  y2={segment.y2}
                   stroke={BORDER}
                   strokeWidth={2}
                 />
               ))}
 
-              {layout?.familyEdges.map((e, i) => {
-                const busY = (e.unionGeneration + 0.5) * ROW_HEIGHT;
-                const minX = Math.min(...e.childrenX) * SLOT_WIDTH;
-                const maxX = Math.max(...e.childrenX) * SLOT_WIDTH;
-                return (
-                  <g key={`fe-${i}`}>
-                    <line
-                      x1={e.unionMidX * SLOT_WIDTH}
-                      x2={e.unionMidX * SLOT_WIDTH}
-                      y1={e.unionGeneration * ROW_HEIGHT}
-                      y2={busY}
-                      stroke={BORDER}
-                      strokeWidth={2}
-                    />
-                    <line x1={minX} x2={maxX} y1={busY} y2={busY} stroke={BORDER} strokeWidth={2} />
-                    {e.childrenX.map((cx, j) => (
-                      <line
-                        key={j}
-                        x1={cx * SLOT_WIDTH}
-                        x2={cx * SLOT_WIDTH}
-                        y1={busY}
-                        y2={e.childGeneration * ROW_HEIGHT}
-                        stroke={BORDER}
-                        strokeWidth={2}
-                      />
-                    ))}
-                  </g>
-                );
-              })}
-
               {layout?.nodes.map((n) => {
                 const person = personById.get(n.personId);
                 if (!person) return null;
-                const cx = n.x * SLOT_WIDTH;
-                const cy = n.generation * ROW_HEIGHT;
+                const cx = n.x;
+                const cy = n.y;
                 const accent = n.isBlood ? primary : secondary;
                 const isRoot = n.personId === rootId;
                 const hasPhoto = !!person.photo_url;
@@ -460,7 +447,7 @@ export default function TreeView() {
                   : null;
                 return (
                   <g
-                    key={n.personId}
+                    key={n.occurrenceId}
                     transform={`translate(${cx - CARD_WIDTH / 2}, ${cy - CARD_HEIGHT / 2})`}
                     className="tree-node"
                     onClick={(e) => {
