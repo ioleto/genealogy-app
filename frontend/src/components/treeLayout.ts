@@ -263,6 +263,27 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
       if (!targets.has(node)) targets.set(node, []);
       targets.get(node)!.push(x);
     };
+    const isParentAnchored = (node: PersonNodePos) => parentAlignedNodes.has(`${node.personId}:${node.generation}`);
+    const addCoupleTargets = (partner1: PersonNodePos | undefined, partner2: PersonNodePos | undefined, center: number) => {
+      if (!partner1 || !partner2) {
+        addTarget(partner1 ?? partner2, center);
+        return;
+      }
+      const direction = partner2.x >= partner1.x ? 1 : -1;
+      const partner1Anchored = isParentAnchored(partner1);
+      const partner2Anchored = isParentAnchored(partner2);
+
+      if (partner1Anchored && !partner2Anchored) {
+        addTarget(partner2, partner1.x + direction * SLOT_GAP);
+      } else if (partner2Anchored && !partner1Anchored) {
+        addTarget(partner1, partner2.x - direction * SLOT_GAP);
+      } else if (!partner1Anchored && !partner2Anchored) {
+        addTarget(partner1, center - direction * SLOT_GAP / 2);
+        addTarget(partner2, center + direction * SLOT_GAP / 2);
+      }
+      // Si les deux partenaires sont déjà ancrés sous leurs propres parents,
+      // on respecte ces deux aplombs : leur ligne de couple peut s'allonger.
+    };
 
     for (const union of graph.unions) {
       for (const generation of rows.keys()) {
@@ -281,21 +302,16 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
           // sous leur propre couple parental, au lieu d'être artificiellement
           // rapprochés par leur foyer commun.
           addTarget(children[0], coupleCenter);
+          addCoupleTargets(partner1, partner2, children[0].x);
         } else if (children.length > 1) {
           // Pour une fratrie, le couple se place naturellement au-dessus du
           // milieu de la rangée d'enfants.
           const center = (Math.min(...children.map((child) => child.x)) + Math.max(...children.map((child) => child.x))) / 2;
-          if (partner1 && partner2) {
-            addTarget(partner1, center - SLOT_GAP / 2);
-            addTarget(partner2, center + SLOT_GAP / 2);
-          } else {
-            addTarget(partner1 ?? partner2, center);
-          }
+          addCoupleTargets(partner1, partner2, center);
         } else if (partner1 && partner2) {
           // Une union sans enfant visible conserve une distance lisible entre
           // les deux fiches sans imposer de déplacement aux autres branches.
-          addTarget(partner1, coupleCenter - SLOT_GAP / 2);
-          addTarget(partner2, coupleCenter + SLOT_GAP / 2);
+          addCoupleTargets(partner1, partner2, coupleCenter);
         }
       }
     }
