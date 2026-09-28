@@ -105,7 +105,10 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
         descendantVisited.add(spouseId);
         const spouseX = unionMidX + 0.5;
         nodes.push({ personId: spouseId, x: spouseX, generation, isBlood: false });
-        attachments.push({ anchorX: unionMidX });
+        // Une carte occupe presque un slot complet : les centres doivent être
+        // distants d'un slot (et non d'un demi-slot), sinon les époux se
+        // recouvrent dès que l'arbre est recentré sur un ancêtre.
+        attachments.push({ anchorX: unionMidX - 0.5 });
         familyEdgesForPerson.push({ edge, spouseX });
       } else {
         attachments.push({ anchorX: unionMidX });
