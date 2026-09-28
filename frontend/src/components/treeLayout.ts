@@ -222,10 +222,37 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   const parentAlignedNodes = new Set<string>();
   for (const union of graph.unions) {
     for (const generation of rows.keys()) {
+      const partner1 = nodeAt.get(`${union.partner1_id}:${generation}`);
+      const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${generation}`) : undefined;
+      if (!partner1 && !partner2) continue;
       const children = (childrenByUnion.get(union.id) ?? [])
         .map((childId) => nodeAt.get(`${childId}:${generation + 1}`))
         .filter((node): node is PersonNodePos => !!node);
       if (children.length === 1) parentAlignedNodes.add(`${children[0].personId}:${children[0].generation}`);
+    }
+  }
+
+  function moveChildAndFreePartners(personId: string, generation: number, delta: number) {
+    const pending = [personId];
+    const moved = new Set<string>();
+    while (pending.length > 0) {
+      const currentId = pending.pop()!;
+      if (moved.has(currentId)) continue;
+      moved.add(currentId);
+
+      const node = nodeAt.get(`${currentId}:${generation}`);
+      if (!node) continue;
+      node.x += delta;
+
+      for (const relatedUnion of unionsByPartner.get(currentId) ?? []) {
+        const partnerId = relatedUnion.partner1_id === currentId
+          ? relatedUnion.partner2_id
+          : relatedUnion.partner1_id;
+        if (!partnerId || !nodeAt.has(`${partnerId}:${generation}`)) continue;
+        // Un conjoint lui-même ancré sous ses parents ne doit pas être
+        // déplacé avec le bloc : sa ligne de couple peut alors s'allonger.
+        if (!parentAlignedNodes.has(`${partnerId}:${generation}`)) pending.push(partnerId);
+      }
     }
   }
 
@@ -293,6 +320,39 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
         if (rightIsAnchored && !leftIsAnchored) left.x = right.x - SLOT_GAP;
         else right.x = minimumRight;
       }
+    }
+  }
+
+  // L'itération et l'évitement des collisions donnent une disposition
+  // compacte, mais peuvent laisser un léger écart résiduel. Cette dernière
+  // passe rend l'aplomb parent-enfant exact pour chaque enfant unique.
+  for (const edge of [...familyEdges].sort((a, b) => a.unionGeneration - b.unionGeneration)) {
+    const union = unionsById.get(edge.unionId);
+    const childIds = union ? childrenByUnion.get(union.id) ?? [] : [];
+    if (!union || childIds.length !== 1) continue;
+
+    const partner1 = nodeAt.get(`${union.partner1_id}:${edge.unionGeneration}`);
+    const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${edge.unionGeneration}`) : undefined;
+    const child = nodeAt.get(`${childIds[0]}:${edge.childGeneration}`);
+    if (!child || (!partner1 && !partner2)) continue;
+
+    const parentCenter = ((partner1?.x ?? partner2!.x) + (partner2?.x ?? partner1!.x)) / 2;
+    moveChildAndFreePartners(child.personId, edge.childGeneration, parentCenter - child.x);
+  }
+
+  // Après l'alignement strict, on écarte seulement les fiches non ancrées
+  // qui viendraient encore empiéter sur une fiche reliée à ses parents.
+  for (const row of rows.values()) {
+    row.sort((a, b) => a.x - b.x);
+    for (let index = 1; index < row.length; index += 1) {
+      const left = row[index - 1];
+      const right = row[index];
+      if (right.x >= left.x + SLOT_GAP) continue;
+      const leftIsAnchored = parentAlignedNodes.has(`${left.personId}:${left.generation}`);
+      const rightIsAnchored = parentAlignedNodes.has(`${right.personId}:${right.generation}`);
+      if (rightIsAnchored && !leftIsAnchored) left.x = right.x - SLOT_GAP;
+      else if (leftIsAnchored && !rightIsAnchored) right.x = left.x + SLOT_GAP;
+      else right.x = left.x + SLOT_GAP;
     }
   }
 
