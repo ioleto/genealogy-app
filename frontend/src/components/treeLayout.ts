@@ -133,14 +133,22 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   const ancestorNodes: PersonNodePos[] = [];
   const ancestorFamilyEdges: FamilyEdge[] = [];
   let ancestorLeafX = 0;
-  const ancestorVisited = new Set<string>();
+  const ancestorPositions = new Map<string, number>();
+  const ancestorInProgress = new Set<string>();
   let ancestorRootX = 0;
 
-  function layoutAncestor(personId: string, generation: number): number {
-    if (ancestorVisited.has(personId) || generation < -MAX_DEPTH) {
+  function layoutAncestor(personId: string, generation: number, incomingUnionId?: string): number {
+    const positionKey = `${personId}:${generation}`;
+    const knownPosition = ancestorPositions.get(positionKey);
+    if (knownPosition !== undefined) return knownPosition;
+    if (generation < -MAX_DEPTH) return ancestorLeafX++;
+    if (ancestorInProgress.has(positionKey)) {
+      // Protection de cycle exceptionnelle (cousins apparentés, import
+      // GEDCOM atypique) : ne jamais inventer une deuxième position pour une
+      // personne déjà en cours de calcul.
       return ancestorLeafX++;
     }
-    ancestorVisited.add(personId);
+    ancestorInProgress.add(positionKey);
 
     const unionId = parentUnionByChild.get(personId);
     const union = unionId ? unionsById.get(unionId) : undefined;
@@ -151,7 +159,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
       personX = ancestorLeafX++;
     } else {
       const parentIds = [union.partner1_id, union.partner2_id].filter((p): p is string => !!p);
-      const parentCenters = parentIds.map((pid) => layoutAncestor(pid, generation - 1));
+      const parentCenters = parentIds.map((pid) => layoutAncestor(pid, generation - 1, union.id));
       personX = parentCenters.length > 0 ? average(parentCenters) : ancestorLeafX++;
 
       ancestorFamilyEdges.push({
@@ -168,6 +176,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     } else {
       ancestorRootX = personX;
     }
+    ancestorPositions.set(positionKey, personX);
 
     // Un ancêtre peut avoir eu plusieurs unions (remariage) — celle qui a
     // produit l'enfant qu'on remonte n'est qu'une partie de l'histoire. Sans
@@ -178,12 +187,17 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     if (personId !== rootId) {
       const ownUnions = (unionsByPartner.get(personId) ?? []).filter((u) => unionsById.has(u.id));
       for (const u of ownUnions) {
+        // Cette union est justement celle par laquelle on est arrivé à cette
+        // personne : ne pas parcourir son/sa co-parent comme un "nouveau"
+        // conjoint avant que le couple parental ait été positionné.
+        if (u.id === incomingUnionId) continue;
         const spouseId = u.partner1_id === personId ? u.partner2_id : u.partner1_id;
-        if (!spouseId || ancestorVisited.has(spouseId)) continue;
-        const spouseX = layoutAncestor(spouseId, generation);
+        if (!spouseId) continue;
+        layoutAncestor(spouseId, generation, u.id);
       }
     }
 
+    ancestorInProgress.delete(positionKey);
     return personX;
   }
 
@@ -211,8 +225,51 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     if (!rows.has(node.generation)) rows.set(node.generation, []);
     rows.get(node.generation)!.push(node);
   }
-  for (const row of rows.values()) {
+  for (const [generation, row] of rows) {
     row.sort((a, b) => a.x - b.x);
+    const originalOrder = new Map(row.map((node, index) => [node.personId, index]));
+    const rowByPersonId = new Map(row.map((node) => [node.personId, node]));
+    const visited = new Set<string>();
+    const components: Array<{ nodes: PersonNodePos[]; targetX: number; order: number }> = [];
+
+    // Chaque union visible forme un bloc indissociable pour l'ordre d'une
+    // ligne. Sans cela, deux branches ancestrales peuvent s'intercaler entre
+    // les époux et donner l'illusion de faux couples.
+    for (const start of row) {
+      if (visited.has(start.personId)) continue;
+      const pending = [start.personId];
+      const component: PersonNodePos[] = [];
+      while (pending.length > 0) {
+        const personId = pending.pop()!;
+        if (visited.has(personId)) continue;
+        visited.add(personId);
+        const node = rowByPersonId.get(personId);
+        if (!node) continue;
+        component.push(node);
+        for (const union of unionsByPartner.get(personId) ?? []) {
+          const partnerId = union.partner1_id === personId ? union.partner2_id : union.partner1_id;
+          if (partnerId && rowByPersonId.has(partnerId)) pending.push(partnerId);
+        }
+      }
+
+      const childXs: number[] = [];
+      for (const node of component) {
+        for (const union of unionsByPartner.get(node.personId) ?? []) {
+          for (const childId of childrenByUnion.get(union.id) ?? []) {
+            const child = nodeAt.get(`${childId}:${generation + 1}`);
+            if (child) childXs.push(child.x);
+          }
+        }
+      }
+      components.push({
+        nodes: component.sort((a, b) => (originalOrder.get(a.personId)! - originalOrder.get(b.personId)!)),
+        targetX: childXs.length > 0 ? average(childXs) : average(component.map((node) => node.x)),
+        order: Math.min(...component.map((node) => originalOrder.get(node.personId)!)),
+      });
+    }
+
+    components.sort((a, b) => a.targetX - b.targetX || a.order - b.order);
+    row.splice(0, row.length, ...components.flatMap((component) => component.nodes));
     row.forEach((node, index) => {
       node.x = index - (row.length - 1) / 2;
     });
@@ -273,13 +330,21 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
       const partner1Anchored = isParentAnchored(partner1);
       const partner2Anchored = isParentAnchored(partner2);
 
+      const forceAncestorCouple = partner1.generation < 0;
       if (partner1Anchored && !partner2Anchored) {
         addTarget(partner2, partner1.x + direction * SLOT_GAP);
       } else if (partner2Anchored && !partner1Anchored) {
         addTarget(partner1, partner2.x - direction * SLOT_GAP);
-      } else if (!partner1Anchored && !partner2Anchored) {
-        addTarget(partner1, center - direction * SLOT_GAP / 2);
-        addTarget(partner2, center + direction * SLOT_GAP / 2);
+      } else if (!partner1Anchored && !partner2Anchored || forceAncestorCouple) {
+        // Dans les générations ancestrales, le couple est un bloc prioritaire
+        // même si les deux partenaires ont leurs propres parents visibles.
+        // On donne un poids supérieur à cette contrainte pour éviter qu'une
+        // autre branche ne s'insère entre les deux fiches.
+        const repetitions = forceAncestorCouple ? 3 : 1;
+        for (let index = 0; index < repetitions; index += 1) {
+          addTarget(partner1, center - direction * SLOT_GAP / 2);
+          addTarget(partner2, center + direction * SLOT_GAP / 2);
+        }
       }
       // Si les deux partenaires sont déjà ancrés sous leurs propres parents,
       // on respecte ces deux aplombs : leur ligne de couple peut s'allonger.
@@ -345,7 +410,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   for (const edge of [...familyEdges].sort((a, b) => a.unionGeneration - b.unionGeneration)) {
     const union = unionsById.get(edge.unionId);
     const childIds = union ? childrenByUnion.get(union.id) ?? [] : [];
-    if (!union || childIds.length !== 1) continue;
+    if (!union || childIds.length !== 1 || edge.childGeneration < 0) continue;
 
     const partner1 = nodeAt.get(`${union.partner1_id}:${edge.unionGeneration}`);
     const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${edge.unionGeneration}`) : undefined;
