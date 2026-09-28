@@ -236,15 +236,29 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
         const children = (childrenByUnion.get(union.id) ?? [])
           .map((childId) => nodeAt.get(`${childId}:${generation + 1}`))
           .filter((node): node is PersonNodePos => !!node);
-        const center = children.length > 0
-          ? (Math.min(...children.map((child) => child.x)) + Math.max(...children.map((child) => child.x))) / 2
-          : ((partner1?.x ?? partner2!.x) + (partner2?.x ?? partner1!.x)) / 2;
+        const coupleCenter = ((partner1?.x ?? partner2!.x) + (partner2?.x ?? partner1!.x)) / 2;
 
-        if (partner1 && partner2) {
-          addTarget(partner1, center - SLOT_GAP / 2);
-          addTarget(partner2, center + SLOT_GAP / 2);
-        } else {
-          addTarget(partner1 ?? partner2, center);
+        if (children.length === 1) {
+          // Un enfant unique reste à l'aplomb de SES parents. Cela permet à
+          // deux conjoints issus de branches différentes de s'écarter chacun
+          // sous leur propre couple parental, au lieu d'être artificiellement
+          // rapprochés par leur foyer commun.
+          addTarget(children[0], coupleCenter);
+        } else if (children.length > 1) {
+          // Pour une fratrie, le couple se place naturellement au-dessus du
+          // milieu de la rangée d'enfants.
+          const center = (Math.min(...children.map((child) => child.x)) + Math.max(...children.map((child) => child.x))) / 2;
+          if (partner1 && partner2) {
+            addTarget(partner1, center - SLOT_GAP / 2);
+            addTarget(partner2, center + SLOT_GAP / 2);
+          } else {
+            addTarget(partner1 ?? partner2, center);
+          }
+        } else if (partner1 && partner2) {
+          // Une union sans enfant visible conserve une distance lisible entre
+          // les deux fiches sans imposer de déplacement aux autres branches.
+          addTarget(partner1, coupleCenter - SLOT_GAP / 2);
+          addTarget(partner2, coupleCenter + SLOT_GAP / 2);
         }
       }
     }
