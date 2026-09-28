@@ -199,6 +199,29 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   // par une autre union et produisait les prolongements visibles à droite.
   const nodeAt = new Map(nodes.map((node) => [`${node.personId}:${node.generation}`, node]));
 
+  function moveMaritalUnit(personId: string, generation: number, delta: number) {
+    // Une personne et tous ses conjoints déjà visibles à cette génération
+    // forment un bloc : les dissocier lors d'un réalignement crée des fiches
+    // superposées. Les enfants ne sont pas déplacés ici ; leurs propres
+    // unions seront réalignées à leur tour dans la génération suivante.
+    const pending = [personId];
+    const moved = new Set<string>();
+    while (pending.length > 0) {
+      const currentId = pending.pop()!;
+      if (moved.has(currentId)) continue;
+      moved.add(currentId);
+
+      const node = nodeAt.get(`${currentId}:${generation}`);
+      if (!node) continue;
+      node.x += delta;
+
+      for (const union of unionsByPartner.get(currentId) ?? []) {
+        const partnerId = union.partner1_id === currentId ? union.partner2_id : union.partner1_id;
+        if (partnerId && nodeAt.has(`${partnerId}:${generation}`)) pending.push(partnerId);
+      }
+    }
+  }
+
   // Avec un seul enfant, la convention de lecture est sans ambiguïté : sa
   // fiche doit tomber à l'aplomb du milieu du couple. On traite les unions
   // des générations les plus anciennes vers les plus récentes pour que cet
@@ -215,7 +238,7 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     if (!child || (!partner1 && !partner2)) continue;
 
     const unionMidX = partner1 && partner2 ? (partner1.x + partner2.x) / 2 : (partner1 ?? partner2)!.x;
-    child.x = unionMidX;
+    moveMaritalUnit(childIds[0], edge.childGeneration, unionMidX - child.x);
   }
 
   spouseLines = [];
