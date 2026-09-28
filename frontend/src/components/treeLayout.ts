@@ -195,6 +195,26 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   // réutiliser une ancienne ancre de mise en page : elle peut être déplacée
   // par une autre union et produisait les prolongements visibles à droite.
   const nodeAt = new Map(nodes.map((node) => [`${node.personId}:${node.generation}`, node]));
+
+  // Avec un seul enfant, la convention de lecture est sans ambiguïté : sa
+  // fiche doit tomber à l'aplomb du milieu du couple. On traite les unions
+  // des générations les plus anciennes vers les plus récentes pour que cet
+  // ajustement se propage naturellement à toute la branche.
+  for (const edge of [...familyEdges].sort((a, b) => a.unionGeneration - b.unionGeneration)) {
+    const union = unionsById.get(edge.unionId);
+    if (!union) continue;
+    const childIds = childrenByUnion.get(union.id) ?? [];
+    if (childIds.length !== 1) continue;
+
+    const partner1 = nodeAt.get(`${union.partner1_id}:${edge.unionGeneration}`);
+    const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${edge.unionGeneration}`) : undefined;
+    const child = nodeAt.get(`${childIds[0]}:${edge.childGeneration}`);
+    if (!child || (!partner1 && !partner2)) continue;
+
+    const unionMidX = partner1 && partner2 ? (partner1.x + partner2.x) / 2 : (partner1 ?? partner2)!.x;
+    child.x = unionMidX;
+  }
+
   spouseLines = [];
   for (const union of graph.unions) {
     if (!union.partner2_id) continue;
@@ -213,6 +233,10 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${edge.unionGeneration}`) : undefined;
     if (partner1 && partner2) edge.unionMidX = (partner1.x + partner2.x) / 2;
     else if (partner1) edge.unionMidX = partner1.x;
+    else if (partner2) edge.unionMidX = partner2.x;
+    edge.childrenX = (childrenByUnion.get(union.id) ?? [])
+      .map((childId) => nodeAt.get(`${childId}:${edge.childGeneration}`)?.x)
+      .filter((x): x is number => x !== undefined);
   }
 
   return { nodes, spouseLines, familyEdges };
