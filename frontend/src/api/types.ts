@@ -26,10 +26,13 @@ export interface PersonSummary {
 
 export interface Person extends PersonSummary {
   birth_last_name: string | null;
+  nickname: string | null;
+  is_living: boolean | null;
   birth_date_approx: boolean;
   birth_place: string | null;
   death_date_approx: boolean;
   death_place: string | null;
+  cause_of_death: string | null;
   occupation: string | null;
   biography: string | null;
   photo_url: string | null;
@@ -81,4 +84,81 @@ export interface TreeGraph {
   persons: Person[];
   unions: UnionRecord[];
   filiations: Filiation[];
+}
+
+// ---------- Events ----------
+
+export type EventType = "baptism" | "burial" | "residence" | "military_service" | "other";
+export type ParticipantRole = "godfather" | "godmother" | "witness" | "other";
+
+export interface EventParticipant {
+  id: string;
+  event_id: string;
+  person_id: string;
+  role: ParticipantRole;
+}
+
+export interface PersonEvent {
+  id: string;
+  person_id: string;
+  event_type: EventType;
+  event_date: string | null;
+  event_date_approx: boolean;
+  place: string | null;
+  description: string | null;
+  created_at: string;
+  participants: EventParticipant[];
+}
+
+// ---------- Union witnesses ----------
+
+export interface UnionWitness {
+  id: string;
+  union_id: string;
+  person_id: string;
+  role: string | null;
+}
+
+// ---------- Sources & citations ----------
+
+export type SourceType = "parish_register" | "civil_record" | "census" | "correspondence" | "oral_testimony" | "other";
+export type Confidence = "low" | "medium" | "high";
+
+export interface Source {
+  id: string;
+  title: string;
+  source_type: SourceType;
+  author: string | null;
+  repository: string | null;
+  url: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Citation {
+  id: string;
+  source_id: string;
+  person_id: string | null;
+  union_id: string | null;
+  detail: string | null;
+  confidence: Confidence;
+  created_at: string;
+  source: Source;
+}
+
+// ---------- Research notes ----------
+
+export interface ResearchNote {
+  id: string;
+  person_id: string;
+  text: string;
+  done: boolean;
+  created_at: string;
+}
+
+// ---------- Relationship calculator ----------
+
+export interface RelationshipResult {
+  label: string;
+  path_description: string;
 }

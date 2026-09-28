@@ -2,23 +2,56 @@ import { FormEvent, ChangeEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addChild,
+  addEventParticipant,
+  addUnionWitness,
+  createCitation,
+  createEvent,
   createPerson,
+  createResearchNote,
   createUnion,
+  deleteCitation,
   deleteDocument,
+  deleteEvent,
   deletePerson,
+  deleteResearchNote,
   deleteUnion,
   extractErrorMessage,
   getPerson,
+  getRelationship,
   getTreeGraph,
+  listCitationsForPerson,
+  listCitationsForUnion,
   listDocuments,
+  listEvents,
+  listResearchNotes,
+  listUnionWitnesses,
   removeChild,
+  removeEventParticipant,
+  removeUnionWitness,
   updatePerson,
+  updateResearchNote,
   uploadDocument,
   uploadPhoto,
 } from "../api/client";
-import type { Person, PersonDocument, PersonInput, PersonSummary, TreeGraph, UnionRecord, UnionType } from "../api/types";
+import type {
+  Citation,
+  Confidence,
+  ParticipantRole,
+  Person,
+  PersonDocument,
+  PersonEvent,
+  PersonInput,
+  PersonSummary,
+  RelationshipResult,
+  ResearchNote,
+  TreeGraph,
+  UnionRecord,
+  UnionType,
+  UnionWitness,
+} from "../api/types";
 import PersonPicker from "../components/PersonPicker";
 import FamilySelect from "../components/FamilySelect";
+import SourceSelect from "../components/SourceSelect";
 import { useAuth } from "../auth/AuthContext";
 import "./PersonForm.css";
 
@@ -26,13 +59,16 @@ const emptyForm: PersonInput = {
   first_name: "",
   last_name: "",
   birth_last_name: null,
+  nickname: null,
   sex: "U",
+  is_living: null,
   birth_date: null,
   birth_date_approx: false,
   birth_place: null,
   death_date: null,
   death_date_approx: false,
   death_place: null,
+  cause_of_death: null,
   occupation: null,
   biography: null,
   photo_url: null,
@@ -216,11 +252,36 @@ export default function PersonForm() {
             />
           </div>
           <div className="field">
+            <label htmlFor="nickname">Surnom / nom d'usage</label>
+            <input
+              id="nickname"
+              disabled={!canEdit}
+              value={form.nickname ?? ""}
+              onChange={(e) => set("nickname", e.target.value || null)}
+            />
+          </div>
+        </div>
+
+        <div className="field-row">
+          <div className="field">
             <label htmlFor="sex">Sexe</label>
             <select id="sex" disabled={!canEdit} value={form.sex} onChange={(e) => set("sex", e.target.value as any)}>
               <option value="U">Non précisé</option>
               <option value="M">Masculin</option>
               <option value="F">Féminin</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="is_living">Statut</label>
+            <select
+              id="is_living"
+              disabled={!canEdit}
+              value={form.is_living === null ? "" : form.is_living ? "living" : "deceased"}
+              onChange={(e) => set("is_living", e.target.value === "" ? null : e.target.value === "living")}
+            >
+              <option value="">Non précisé</option>
+              <option value="living">Vivant·e</option>
+              <option value="deceased">Décédé·e</option>
             </select>
           </div>
         </div>
@@ -285,6 +346,16 @@ export default function PersonForm() {
               onChange={(e) => set("death_place", e.target.value || null)}
             />
           </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="cause_of_death">Cause du décès</label>
+          <input
+            id="cause_of_death"
+            disabled={!canEdit}
+            value={form.cause_of_death ?? ""}
+            onChange={(e) => set("cause_of_death", e.target.value || null)}
+          />
         </div>
 
         <div className="field">
@@ -369,6 +440,10 @@ export default function PersonForm() {
             onChange={refreshGraph}
           />
           <DocumentsSection personId={id} canEdit={canEdit} />
+          <EventsSection personId={id} personById={personById} canEdit={canEdit} />
+          <SourcesSection personId={id} canEdit={canEdit} />
+          <ResearchNotesSection personId={id} canEdit={canEdit} />
+          <RelationshipCalculator personId={id} />
         </>
       )}
     </div>
@@ -678,6 +753,39 @@ function UnionBlock({
   const [child, setChild] = useState<PersonSummary | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [witnesses, setWitnesses] = useState<UnionWitness[]>([]);
+  const [showAddWitness, setShowAddWitness] = useState(false);
+  const [witnessPerson, setWitnessPerson] = useState<PersonSummary | null>(null);
+  const [witnessRole, setWitnessRole] = useState("Témoin");
+
+  function reloadWitnesses() {
+    return listUnionWitnesses(union.id).then(setWitnesses);
+  }
+
+  useEffect(() => {
+    reloadWitnesses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [union.id]);
+
+  async function handleAddWitness(e: FormEvent) {
+    e.preventDefault();
+    if (!witnessPerson) return;
+    setSaving(true);
+    try {
+      await addUnionWitness(union.id, witnessPerson.id, witnessRole || undefined);
+      setWitnessPerson(null);
+      setShowAddWitness(false);
+      await reloadWitnesses();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemoveWitness(id: string) {
+    await removeUnionWitness(id);
+    await reloadWitnesses();
+  }
+
   async function handleAddChild(e: FormEvent) {
     e.preventDefault();
     if (!child) return;
@@ -745,6 +853,61 @@ function UnionBlock({
           })}
         </ul>
       )}
+
+      {witnesses.length > 0 && (
+        <ul className="children-list witnesses-list">
+          {witnesses.map((w) => {
+            const p = personById.get(w.person_id);
+            return (
+              <li key={w.id}>
+                <span className="muted" style={{ fontSize: "0.78rem", marginRight: "0.4rem" }}>
+                  {w.role || "Témoin"} :
+                </span>
+                {p ? (
+                  <Link to={`/fiches/${p.id}`} className="relation-link">
+                    {p.first_name} {p.last_name}
+                  </Link>
+                ) : (
+                  "Fiche inconnue"
+                )}
+                {canEdit && (
+                  <button className="btn-ghost person-picker-clear" type="button" onClick={() => handleRemoveWitness(w.id)}>
+                    Retirer
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {canEdit &&
+        (showAddWitness ? (
+          <form onSubmit={handleAddWitness} className="relation-add-form-inline">
+            <PersonPicker value={witnessPerson} onChange={setWitnessPerson} placeholder="Choisir le témoin…" />
+            <input
+              style={{ width: 140 }}
+              placeholder="Rôle"
+              value={witnessRole}
+              onChange={(e) => setWitnessRole(e.target.value)}
+            />
+            <button className="btn btn-primary" type="submit" disabled={!witnessPerson || saving}>
+              Ajouter
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={() => setShowAddWitness(false)}>
+              Annuler
+            </button>
+          </form>
+        ) : (
+          <button
+            className="btn btn-ghost"
+            type="button"
+            style={{ fontSize: "0.82rem" }}
+            onClick={() => setShowAddWitness(true)}
+          >
+            + Témoin de mariage
+          </button>
+        ))}
 
       {canEdit &&
         (showAddChild ? (
@@ -855,6 +1018,491 @@ function DocumentsSection({ personId, canEdit }: { personId: string; canEdit: bo
             onChange={handleUpload}
           />
         </label>
+      )}
+    </section>
+  );
+}
+
+// ---------- Events ----------
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  baptism: "Baptême",
+  burial: "Sépulture",
+  residence: "Résidence",
+  military_service: "Service militaire",
+  other: "Autre",
+};
+
+const PARTICIPANT_ROLE_LABELS: Record<ParticipantRole, string> = {
+  godfather: "Parrain",
+  godmother: "Marraine",
+  witness: "Témoin",
+  other: "Autre",
+};
+
+function EventsSection({
+  personId,
+  personById,
+  canEdit,
+}: {
+  personId: string;
+  personById: Map<string, Person>;
+  canEdit: boolean;
+}) {
+  const [events, setEvents] = useState<PersonEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [eventType, setEventType] = useState("baptism");
+  const [eventDate, setEventDate] = useState("");
+  const [place, setPlace] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function reload() {
+    setLoading(true);
+    return listEvents(personId)
+      .then(setEvents)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personId]);
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await createEvent(personId, {
+        event_type: eventType,
+        event_date: eventDate || null,
+        place: place || null,
+        description: description || null,
+      });
+      setShowForm(false);
+      setEventDate("");
+      setPlace("");
+      setDescription("");
+      await reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm("Supprimer cet événement ?")) return;
+    await deleteEvent(id);
+    await reload();
+  }
+
+  return (
+    <section className="relation-section card">
+      <h2>Événements</h2>
+      {loading && <p className="muted">Chargement…</p>}
+      {!loading && events.length === 0 && <p className="muted">Aucun événement renseigné.</p>}
+      {events.map((ev) => (
+        <EventRow
+          key={ev.id}
+          event={ev}
+          personById={personById}
+          canEdit={canEdit}
+          onDelete={() => handleDelete(ev.id)}
+          onChange={reload}
+        />
+      ))}
+
+      {canEdit &&
+        (showForm ? (
+          <form onSubmit={handleAdd} className="relation-add-form">
+            <div className="field-row">
+              <div className="field">
+                <label>Type</label>
+                <select value={eventType} onChange={(e) => setEventType(e.target.value)}>
+                  {Object.entries(EVENT_TYPE_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Date</label>
+                <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="field">
+              <label>Lieu</label>
+              <input value={place} onChange={(e) => setPlace(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Description</label>
+              <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="relation-add-actions">
+              <button className="btn btn-primary" type="submit" disabled={saving}>
+                Enregistrer
+              </button>
+              <button className="btn btn-ghost" type="button" onClick={() => setShowForm(false)}>
+                Annuler
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button className="btn btn-ghost" type="button" onClick={() => setShowForm(true)}>
+            + Ajouter un événement
+          </button>
+        ))}
+    </section>
+  );
+}
+
+function EventRow({
+  event,
+  personById,
+  canEdit,
+  onDelete,
+  onChange,
+}: {
+  event: PersonEvent;
+  personById: Map<string, Person>;
+  canEdit: boolean;
+  onDelete: () => void;
+  onChange: () => void;
+}) {
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [participant, setParticipant] = useState<PersonSummary | null>(null);
+  const [role, setRole] = useState<ParticipantRole>("godfather");
+
+  async function handleAddParticipant() {
+    if (!participant) return;
+    await addEventParticipant(event.id, participant.id, role);
+    setParticipant(null);
+    setShowAddParticipant(false);
+    onChange();
+  }
+
+  async function handleRemoveParticipant(id: string) {
+    await removeEventParticipant(id);
+    onChange();
+  }
+
+  return (
+    <div className="union-block">
+      <div className="union-block-header">
+        <span>
+          <strong>{EVENT_TYPE_LABELS[event.event_type] ?? event.event_type}</strong>
+          {event.event_date && <span className="muted"> · {event.event_date}</span>}
+          {event.place && <span className="muted"> · {event.place}</span>}
+        </span>
+        {canEdit && (
+          <button className="btn-ghost person-picker-clear" type="button" onClick={onDelete}>
+            Supprimer
+          </button>
+        )}
+      </div>
+
+      {event.description && (
+        <p className="muted" style={{ fontSize: "0.85rem", margin: "0.4rem 0 0" }}>
+          {event.description}
+        </p>
+      )}
+
+      {event.participants.length > 0 && (
+        <ul className="children-list witnesses-list">
+          {event.participants.map((p) => {
+            const person = personById.get(p.person_id);
+            return (
+              <li key={p.id}>
+                <span className="muted" style={{ fontSize: "0.78rem", marginRight: "0.4rem" }}>
+                  {PARTICIPANT_ROLE_LABELS[p.role]} :
+                </span>
+                {person ? (
+                  <Link to={`/fiches/${person.id}`} className="relation-link">
+                    {person.first_name} {person.last_name}
+                  </Link>
+                ) : (
+                  "Fiche inconnue"
+                )}
+                {canEdit && (
+                  <button
+                    className="btn-ghost person-picker-clear"
+                    type="button"
+                    onClick={() => handleRemoveParticipant(p.id)}
+                  >
+                    Retirer
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {canEdit &&
+        (showAddParticipant ? (
+          <div className="relation-add-form-inline" style={{ marginTop: "0.6rem" }}>
+            <PersonPicker value={participant} onChange={setParticipant} placeholder="Choisir la personne…" />
+            <select value={role} onChange={(e) => setRole(e.target.value as ParticipantRole)}>
+              {Object.entries(PARTICIPANT_ROLE_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <button className="btn" type="button" onClick={handleAddParticipant} disabled={!participant}>
+              Ajouter
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={() => setShowAddParticipant(false)}>
+              Annuler
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-ghost"
+            type="button"
+            style={{ marginTop: "0.5rem", fontSize: "0.82rem" }}
+            onClick={() => setShowAddParticipant(true)}
+          >
+            + Parrain / marraine / témoin
+          </button>
+        ))}
+    </div>
+  );
+}
+
+// ---------- Sources & citations ----------
+
+const CONFIDENCE_LABELS: Record<Confidence, string> = {
+  low: "Faible",
+  medium: "Moyenne",
+  high: "Élevée",
+};
+
+function SourcesSection({ personId, canEdit }: { personId: string; canEdit: boolean }) {
+  const [citations, setCitations] = useState<Citation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [sourceId, setSourceId] = useState<string | null>(null);
+  const [detail, setDetail] = useState("");
+  const [confidence, setConfidence] = useState<Confidence>("medium");
+  const [saving, setSaving] = useState(false);
+
+  function reload() {
+    setLoading(true);
+    return listCitationsForPerson(personId)
+      .then(setCitations)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personId]);
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault();
+    if (!sourceId) return;
+    setSaving(true);
+    try {
+      await createCitation({ source_id: sourceId, person_id: personId, detail: detail || null, confidence });
+      setShowForm(false);
+      setSourceId(null);
+      setDetail("");
+      setConfidence("medium");
+      await reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    await deleteCitation(id);
+    await reload();
+  }
+
+  return (
+    <section className="relation-section card">
+      <h2>Sources</h2>
+      <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+        D'où viennent ces informations : registre, acte, recensement…
+      </p>
+      {loading && <p className="muted">Chargement…</p>}
+      {!loading && citations.length === 0 && <p className="muted">Aucune source citée.</p>}
+      {citations.map((c) => (
+        <div className="relation-row" key={c.id}>
+          <span>
+            <strong>{c.source.title}</strong>
+            {c.detail && <span className="muted"> — {c.detail}</span>}
+            <span className="muted"> · Fiabilité {CONFIDENCE_LABELS[c.confidence].toLowerCase()}</span>
+          </span>
+          {canEdit && (
+            <button className="btn-ghost person-picker-clear" type="button" onClick={() => handleDelete(c.id)}>
+              Retirer
+            </button>
+          )}
+        </div>
+      ))}
+
+      {canEdit &&
+        (showForm ? (
+          <form onSubmit={handleAdd} className="relation-add-form">
+            <div className="field">
+              <label>Source</label>
+              <SourceSelect value={sourceId} onChange={setSourceId} />
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Détail (n° d'acte, page…)</label>
+                <input value={detail} onChange={(e) => setDetail(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Fiabilité</label>
+                <select value={confidence} onChange={(e) => setConfidence(e.target.value as Confidence)}>
+                  {Object.entries(CONFIDENCE_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="relation-add-actions">
+              <button className="btn btn-primary" type="submit" disabled={!sourceId || saving}>
+                Enregistrer
+              </button>
+              <button className="btn btn-ghost" type="button" onClick={() => setShowForm(false)}>
+                Annuler
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button className="btn btn-ghost" type="button" onClick={() => setShowForm(true)}>
+            + Citer une source
+          </button>
+        ))}
+    </section>
+  );
+}
+
+// ---------- Research notes ----------
+
+function ResearchNotesSection({ personId, canEdit }: { personId: string; canEdit: boolean }) {
+  const [notes, setNotes] = useState<ResearchNote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newText, setNewText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function reload() {
+    setLoading(true);
+    return listResearchNotes(personId)
+      .then(setNotes)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personId]);
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault();
+    const text = newText.trim();
+    if (!text) return;
+    setSaving(true);
+    try {
+      await createResearchNote(personId, text);
+      setNewText("");
+      await reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleDone(note: ResearchNote) {
+    await updateResearchNote(note.id, { done: !note.done });
+    await reload();
+  }
+
+  async function handleDelete(id: string) {
+    await deleteResearchNote(id);
+    await reload();
+  }
+
+  return (
+    <section className="relation-section card">
+      <h2>Pistes de recherche</h2>
+      {loading && <p className="muted">Chargement…</p>}
+      {!loading && notes.length === 0 && <p className="muted">Aucune piste en cours.</p>}
+      {notes.length > 0 && (
+        <ul className="research-list">
+          {notes.map((n) => (
+            <li key={n.id} className={n.done ? "research-done" : ""}>
+              <label className="research-checkbox">
+                <input type="checkbox" checked={n.done} disabled={!canEdit} onChange={() => toggleDone(n)} />
+                <span>{n.text}</span>
+              </label>
+              {canEdit && (
+                <button className="btn-ghost person-picker-clear" type="button" onClick={() => handleDelete(n.id)}>
+                  Retirer
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <form onSubmit={handleAdd} style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
+          <input
+            style={{ flex: 1 }}
+            placeholder="Ex. Vérifier l'acte de naissance aux AD de…"
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+          />
+          <button className="btn" type="submit" disabled={saving || !newText.trim()}>
+            Ajouter
+          </button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+// ---------- Relationship calculator ----------
+
+function RelationshipCalculator({ personId }: { personId: string }) {
+  const [other, setOther] = useState<PersonSummary | null>(null);
+  const [result, setResult] = useState<RelationshipResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handlePick(p: PersonSummary | null) {
+    setOther(p);
+    setResult(null);
+    if (!p) return;
+    setLoading(true);
+    try {
+      const res = await getRelationship(personId, p.id);
+      setResult(res);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="relation-section card">
+      <h2>Lien de parenté</h2>
+      <div className="field">
+        <label>Calculer le lien avec…</label>
+        <PersonPicker value={other} onChange={handlePick} excludeIds={[personId]} />
+      </div>
+      {loading && <p className="muted">Calcul…</p>}
+      {result && (
+        <div className="relationship-result">
+          <strong>{result.label}</strong>
+          <p className="muted" style={{ margin: "0.3rem 0 0", fontSize: "0.85rem" }}>
+            {result.path_description}
+          </p>
+        </div>
       )}
     </section>
   );

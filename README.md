@@ -37,6 +37,24 @@ React. Pensée pour un déploiement en une fois depuis Portainer.
   parenté déclarés (utile pour les parents biologiques/adoptifs), chacun
   modifiable ou retirable indépendamment — et les parents comme les enfants
   sont cliquables pour naviguer directement vers leur propre fiche.
+- **Sources et citations** — la pratique standard qui distingue un arbre
+  documenté d'une simple liste de noms : chaque fiche peut citer les
+  sources (registre paroissial, acte d'état civil, recensement…) qui
+  justifient ses informations, avec détail précis (n° d'acte, page) et
+  niveau de fiabilité.
+- **Événements génériques** : baptême, sépulture, résidence, service
+  militaire, avec leurs propres parrain/marraine ou témoins — le modèle
+  d'événement standard en généalogie (GEDCOM, Gramps), en complément des
+  champs naissance/décès.
+- **Témoins de mariage**, courants dans les actes d'état civil français et
+  une bonne piste pour élargir l'arbre.
+- **Calculateur de lien de parenté** entre deux fiches (cousin au 2e
+  degré, grand-oncle, etc.), calculé automatiquement à partir de l'arbre.
+- **Pistes de recherche** : un journal de choses à vérifier par fiche,
+  partagé entre les contributeurs.
+- **Champs complémentaires** : surnom/nom d'usage, cause du décès, statut
+  vivant/décédé (ce dernier sert aussi à préparer une future
+  confidentialité des personnes vivantes dans les exports partagés).
 - **Paramètres d'apparence** : couleur principale et secondaire, avec
   quelques palettes suggérées.
 

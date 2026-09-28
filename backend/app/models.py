@@ -41,6 +41,36 @@ class FiliationType(str, enum.Enum):
     step = "step"
 
 
+class EventType(str, enum.Enum):
+    baptism = "baptism"
+    burial = "burial"
+    residence = "residence"
+    military_service = "military_service"
+    other = "other"
+
+
+class ParticipantRole(str, enum.Enum):
+    godfather = "godfather"
+    godmother = "godmother"
+    witness = "witness"
+    other = "other"
+
+
+class SourceType(str, enum.Enum):
+    parish_register = "parish_register"
+    civil_record = "civil_record"
+    census = "census"
+    correspondence = "correspondence"
+    oral_testimony = "oral_testimony"
+    other = "other"
+
+
+class Confidence(str, enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -101,7 +131,13 @@ class Person(Base):
     first_name: Mapped[str] = mapped_column(String(150), nullable=False)
     last_name: Mapped[str] = mapped_column(String(150), nullable=False)
     birth_last_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    nickname: Mapped[str | None] = mapped_column(String(150), nullable=True)
     sex: Mapped[Sex] = mapped_column(Enum(Sex), default=Sex.unknown, nullable=False)
+
+    # None = inconnu, True = vivant, False = décédé. Sert notamment à
+    # masquer les détails des personnes vivantes lors d'un export GEDCOM
+    # partagé — pratique standard de confidentialité en généalogie.
+    is_living: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     birth_date_approx: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -110,6 +146,7 @@ class Person(Base):
     death_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     death_date_approx: Mapped[bool] = mapped_column(Boolean, default=False)
     death_place: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cause_of_death: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     occupation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     biography: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -175,3 +212,119 @@ class Filiation(Base):
 
     child: Mapped["Person"] = relationship("Person", foreign_keys=[child_id], back_populates="filiations")
     union: Mapped["Union"] = relationship("Union", back_populates="children")
+
+
+class Event(Base):
+    """Événement de vie autre que naissance/décès (déjà des champs dédiés
+    sur Person) : baptême, sépulture, résidence, service militaire, etc. —
+    le modèle « événement générique » standard en généalogie (GEDCOM, Gramps)
+    plutôt que d'ajouter un champ figé par type d'événement possible."""
+
+    __tablename__ = "events"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    person_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[EventType] = mapped_column(Enum(EventType), default=EventType.other, nullable=False)
+    event_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    event_date_approx: Mapped[bool] = mapped_column(Boolean, default=False)
+    place: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    participants: Mapped[list["EventParticipant"]] = relationship(
+        "EventParticipant", cascade="all, delete-orphan", back_populates="event"
+    )
+
+
+class EventParticipant(Base):
+    """Parrain/marraine d'un baptême, témoin d'une sépulture, etc. — une
+    personne associée à un événement d'une autre, avec son rôle."""
+
+    __tablename__ = "event_participants"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    event_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    person_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[ParticipantRole] = mapped_column(Enum(ParticipantRole), default=ParticipantRole.other)
+
+    event: Mapped["Event"] = relationship("Event", back_populates="participants")
+
+
+class UnionWitness(Base):
+    """Témoin d'un mariage — courant dans les actes d'état civil français,
+    et une des principales pistes pour élargir un arbre (amis, voisins,
+    autres membres de la famille présents ce jour-là)."""
+
+    __tablename__ = "union_witnesses"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    union_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("unions.id", ondelete="CASCADE"), nullable=False
+    )
+    person_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
+class Source(Base):
+    """Référence bibliographique/archivistique réutilisable (un registre
+    paroissial, un recensement...) — se cite depuis plusieurs fiches ou
+    unions sans dupliquer sa description à chaque fois."""
+
+    __tablename__ = "sources"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[SourceType] = mapped_column(Enum(SourceType), default=SourceType.other)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    repository: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Citation(Base):
+    """Rattache une Source à une fiche ou une union précise, avec le détail
+    exact (n° d'acte, page, vue...) et un niveau de confiance — ce qui
+    distingue un arbre généalogique documenté d'une simple liste de noms."""
+
+    __tablename__ = "citations"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    person_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("persons.id", ondelete="CASCADE"), nullable=True
+    )
+    union_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("unions.id", ondelete="CASCADE"), nullable=True
+    )
+    detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    confidence: Mapped[Confidence] = mapped_column(Enum(Confidence), default=Confidence.medium)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    source: Mapped["Source"] = relationship("Source")
+
+
+class ResearchNote(Base):
+    """Piste de recherche à suivre sur une fiche (« vérifier l'acte de
+    naissance aux AD de... ») — un journal de recherche par personne,
+    partagé entre les contributeurs de l'arbre."""
+
+    __tablename__ = "research_notes"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    person_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

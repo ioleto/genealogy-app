@@ -83,6 +83,50 @@ textarea {
   white-space: nowrap;
 }
 
+.witnesses-list {
+  border-left-color: var(--color-secondary);
+}
+
+.research-list {
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
+
+.research-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.88rem;
+}
+
+.research-list li:last-child {
+  border-bottom: none;
+}
+
+.research-list li.research-done .research-checkbox span {
+  text-decoration: line-through;
+  color: var(--color-ink-muted);
+}
+
+.research-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  cursor: pointer;
+}
+
+.relationship-result {
+  background: var(--color-primary-soft);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  font-size: 0.95rem;
+}
+
 .relation-add-form {
   margin-top: 0.8rem;
   padding-top: 0.8rem;

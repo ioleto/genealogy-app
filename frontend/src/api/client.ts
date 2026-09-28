@@ -1,14 +1,24 @@
 import axios from "axios";
 import type {
+  Citation,
+  Confidence,
+  EventParticipant,
   Family,
   Filiation,
   Person,
   PersonDocument,
+  PersonEvent,
   PersonInput,
   PersonSummary,
+  ParticipantRole,
+  RelationshipResult,
+  ResearchNote,
+  Source,
+  SourceType,
   TreeGraph,
   UnionInput,
   UnionRecord,
+  UnionWitness,
   User,
 } from "./types";
 
@@ -237,3 +247,132 @@ export async function getTreeGraph(): Promise<TreeGraph> {
 }
 
 export default api;
+
+// ---------- Events ----------
+
+export async function listEvents(personId: string): Promise<PersonEvent[]> {
+  const res = await api.get<PersonEvent[]>("/api/events", { params: { person_id: personId } });
+  return res.data;
+}
+
+export async function createEvent(
+  personId: string,
+  data: { event_type: string; event_date?: string | null; event_date_approx?: boolean; place?: string | null; description?: string | null }
+): Promise<PersonEvent> {
+  const res = await api.post<PersonEvent>("/api/events", data, { params: { person_id: personId } });
+  return res.data;
+}
+
+export async function deleteEvent(id: string): Promise<void> {
+  await api.delete(`/api/events/${id}`);
+}
+
+export async function addEventParticipant(
+  eventId: string,
+  personId: string,
+  role: ParticipantRole
+): Promise<EventParticipant> {
+  const res = await api.post<EventParticipant>(`/api/events/${eventId}/participants`, {
+    person_id: personId,
+    role,
+  });
+  return res.data;
+}
+
+export async function removeEventParticipant(id: string): Promise<void> {
+  await api.delete(`/api/events/participants/${id}`);
+}
+
+// ---------- Union witnesses ----------
+
+export async function listUnionWitnesses(unionId: string): Promise<UnionWitness[]> {
+  const res = await api.get<UnionWitness[]>("/api/union-witnesses", { params: { union_id: unionId } });
+  return res.data;
+}
+
+export async function addUnionWitness(unionId: string, personId: string, role?: string): Promise<UnionWitness> {
+  const res = await api.post<UnionWitness>(
+    "/api/union-witnesses",
+    { person_id: personId, role: role || null },
+    { params: { union_id: unionId } }
+  );
+  return res.data;
+}
+
+export async function removeUnionWitness(id: string): Promise<void> {
+  await api.delete(`/api/union-witnesses/${id}`);
+}
+
+// ---------- Sources & citations ----------
+
+export async function listSources(): Promise<Source[]> {
+  const res = await api.get<Source[]>("/api/sources");
+  return res.data;
+}
+
+export async function createSource(data: {
+  title: string;
+  source_type: SourceType;
+  author?: string | null;
+  repository?: string | null;
+  url?: string | null;
+  notes?: string | null;
+}): Promise<Source> {
+  const res = await api.post<Source>("/api/sources", data);
+  return res.data;
+}
+
+export async function listCitationsForPerson(personId: string): Promise<Citation[]> {
+  const res = await api.get<Citation[]>("/api/citations", { params: { person_id: personId } });
+  return res.data;
+}
+
+export async function listCitationsForUnion(unionId: string): Promise<Citation[]> {
+  const res = await api.get<Citation[]>("/api/citations", { params: { union_id: unionId } });
+  return res.data;
+}
+
+export async function createCitation(data: {
+  source_id: string;
+  person_id?: string | null;
+  union_id?: string | null;
+  detail?: string | null;
+  confidence: Confidence;
+}): Promise<Citation> {
+  const res = await api.post<Citation>("/api/citations", data);
+  return res.data;
+}
+
+export async function deleteCitation(id: string): Promise<void> {
+  await api.delete(`/api/citations/${id}`);
+}
+
+// ---------- Research notes ----------
+
+export async function listResearchNotes(personId: string): Promise<ResearchNote[]> {
+  const res = await api.get<ResearchNote[]>("/api/research-notes", { params: { person_id: personId } });
+  return res.data;
+}
+
+export async function createResearchNote(personId: string, text: string): Promise<ResearchNote> {
+  const res = await api.post<ResearchNote>("/api/research-notes", { text }, { params: { person_id: personId } });
+  return res.data;
+}
+
+export async function updateResearchNote(id: string, data: { text?: string; done?: boolean }): Promise<ResearchNote> {
+  const res = await api.patch<ResearchNote>(`/api/research-notes/${id}`, data);
+  return res.data;
+}
+
+export async function deleteResearchNote(id: string): Promise<void> {
+  await api.delete(`/api/research-notes/${id}`);
+}
+
+// ---------- Relationship calculator ----------
+
+export async function getRelationship(person1Id: string, person2Id: string): Promise<RelationshipResult> {
+  const res = await api.get<RelationshipResult>("/api/tree/relationship", {
+    params: { person1_id: person1Id, person2_id: person2Id },
+  });
+  return res.data;
+}

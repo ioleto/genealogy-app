@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import crud, schemas
+from app import crud, relationship, schemas
 from app.database import get_db
 from app.deps import get_current_user
 
@@ -18,3 +18,16 @@ async def get_graph(db: AsyncSession = Depends(get_db), _=Depends(get_current_us
     """
     persons, unions, filiations = await crud.get_full_graph(db)
     return schemas.TreeGraph(persons=persons, unions=unions, filiations=filiations)
+
+
+@router.get("/relationship", response_model=schemas.RelationshipResult)
+async def get_relationship(
+    person1_id: str, person2_id: str, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)
+):
+    """Calcule le lien de parenté entre deux fiches (cousin, oncle, etc.)."""
+    persons, unions, filiations = await crud.get_full_graph(db)
+    known_ids = {p.id for p in persons}
+    if person1_id not in known_ids or person2_id not in known_ids:
+        raise HTTPException(status_code=404, detail="Fiche introuvable")
+    label, description = relationship.compute_relationship(person1_id, person2_id, filiations, unions)
+    return schemas.RelationshipResult(label=label, path_description=description)

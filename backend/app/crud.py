@@ -270,3 +270,194 @@ async def delete_family(db: AsyncSession, family: models.Family) -> None:
     # ON DELETE SET NULL les détache simplement de la famille.
     await db.delete(family)
     await db.commit()
+
+
+# ---------- Events ----------
+
+async def create_event(db: AsyncSession, person_id: str, data: schemas.EventCreate) -> models.Event:
+    event = models.Event(person_id=person_id, **data.model_dump())
+    db.add(event)
+    await db.commit()
+    result = await db.execute(
+        select(models.Event).options(selectinload(models.Event.participants)).where(models.Event.id == event.id)
+    )
+    return result.scalar_one()
+
+
+async def list_events(db: AsyncSession, person_id: str) -> list[models.Event]:
+    result = await db.execute(
+        select(models.Event)
+        .options(selectinload(models.Event.participants))
+        .where(models.Event.person_id == person_id)
+        .order_by(models.Event.event_date)
+    )
+    return list(result.scalars().all())
+
+
+async def get_event(db: AsyncSession, event_id: str) -> models.Event | None:
+    result = await db.execute(select(models.Event).where(models.Event.id == event_id))
+    return result.scalar_one_or_none()
+
+
+async def delete_event(db: AsyncSession, event: models.Event) -> None:
+    await db.delete(event)
+    await db.commit()
+
+
+async def add_event_participant(
+    db: AsyncSession, event_id: str, data: schemas.EventParticipantCreate
+) -> models.EventParticipant:
+    participant = models.EventParticipant(event_id=event_id, **data.model_dump())
+    db.add(participant)
+    await db.commit()
+    await db.refresh(participant)
+    return participant
+
+
+async def remove_event_participant(db: AsyncSession, participant: models.EventParticipant) -> None:
+    await db.delete(participant)
+    await db.commit()
+
+
+async def get_event_participant(db: AsyncSession, participant_id: str) -> models.EventParticipant | None:
+    result = await db.execute(select(models.EventParticipant).where(models.EventParticipant.id == participant_id))
+    return result.scalar_one_or_none()
+
+
+# ---------- Union witnesses ----------
+
+async def add_union_witness(
+    db: AsyncSession, union_id: str, data: schemas.UnionWitnessCreate
+) -> models.UnionWitness:
+    witness = models.UnionWitness(union_id=union_id, **data.model_dump())
+    db.add(witness)
+    await db.commit()
+    await db.refresh(witness)
+    return witness
+
+
+async def list_union_witnesses(db: AsyncSession, union_id: str) -> list[models.UnionWitness]:
+    result = await db.execute(select(models.UnionWitness).where(models.UnionWitness.union_id == union_id))
+    return list(result.scalars().all())
+
+
+async def get_union_witness(db: AsyncSession, witness_id: str) -> models.UnionWitness | None:
+    result = await db.execute(select(models.UnionWitness).where(models.UnionWitness.id == witness_id))
+    return result.scalar_one_or_none()
+
+
+async def remove_union_witness(db: AsyncSession, witness: models.UnionWitness) -> None:
+    await db.delete(witness)
+    await db.commit()
+
+
+# ---------- Sources & citations ----------
+
+async def create_source(db: AsyncSession, data: schemas.SourceCreate) -> models.Source:
+    source = models.Source(**data.model_dump())
+    db.add(source)
+    await db.commit()
+    await db.refresh(source)
+    return source
+
+
+async def list_sources(db: AsyncSession) -> list[models.Source]:
+    result = await db.execute(select(models.Source).order_by(models.Source.title))
+    return list(result.scalars().all())
+
+
+async def get_source(db: AsyncSession, source_id: str) -> models.Source | None:
+    result = await db.execute(select(models.Source).where(models.Source.id == source_id))
+    return result.scalar_one_or_none()
+
+
+async def update_source(db: AsyncSession, source: models.Source, data: schemas.SourceUpdate) -> models.Source:
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(source, field, value)
+    await db.commit()
+    await db.refresh(source)
+    return source
+
+
+async def delete_source(db: AsyncSession, source: models.Source) -> None:
+    await db.delete(source)
+    await db.commit()
+
+
+async def create_citation(db: AsyncSession, data: schemas.CitationCreate) -> models.Citation:
+    citation = models.Citation(**data.model_dump())
+    db.add(citation)
+    await db.commit()
+    result = await db.execute(
+        select(models.Citation).options(selectinload(models.Citation.source)).where(models.Citation.id == citation.id)
+    )
+    return result.scalar_one()
+
+
+async def list_citations_for_person(db: AsyncSession, person_id: str) -> list[models.Citation]:
+    result = await db.execute(
+        select(models.Citation)
+        .options(selectinload(models.Citation.source))
+        .where(models.Citation.person_id == person_id)
+        .order_by(models.Citation.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def list_citations_for_union(db: AsyncSession, union_id: str) -> list[models.Citation]:
+    result = await db.execute(
+        select(models.Citation)
+        .options(selectinload(models.Citation.source))
+        .where(models.Citation.union_id == union_id)
+        .order_by(models.Citation.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def get_citation(db: AsyncSession, citation_id: str) -> models.Citation | None:
+    result = await db.execute(select(models.Citation).where(models.Citation.id == citation_id))
+    return result.scalar_one_or_none()
+
+
+async def delete_citation(db: AsyncSession, citation: models.Citation) -> None:
+    await db.delete(citation)
+    await db.commit()
+
+
+# ---------- Research notes ----------
+
+async def create_research_note(db: AsyncSession, person_id: str, text: str) -> models.ResearchNote:
+    note = models.ResearchNote(person_id=person_id, text=text)
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return note
+
+
+async def list_research_notes(db: AsyncSession, person_id: str) -> list[models.ResearchNote]:
+    result = await db.execute(
+        select(models.ResearchNote)
+        .where(models.ResearchNote.person_id == person_id)
+        .order_by(models.ResearchNote.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def get_research_note(db: AsyncSession, note_id: str) -> models.ResearchNote | None:
+    result = await db.execute(select(models.ResearchNote).where(models.ResearchNote.id == note_id))
+    return result.scalar_one_or_none()
+
+
+async def update_research_note(
+    db: AsyncSession, note: models.ResearchNote, data: schemas.ResearchNoteUpdate
+) -> models.ResearchNote:
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(note, field, value)
+    await db.commit()
+    await db.refresh(note)
+    return note
+
+
+async def delete_research_note(db: AsyncSession, note: models.ResearchNote) -> None:
+    await db.delete(note)
+    await db.commit()

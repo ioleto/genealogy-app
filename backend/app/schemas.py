@@ -4,7 +4,16 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, ConfigDict
 
-from app.models import FiliationType, Sex, UnionType, UserRole
+from app.models import (
+    Confidence,
+    EventType,
+    FiliationType,
+    ParticipantRole,
+    Sex,
+    SourceType,
+    UnionType,
+    UserRole,
+)
 
 
 # ---------- Auth / Users ----------
@@ -84,13 +93,16 @@ class PersonBase(BaseModel):
     first_name: str
     last_name: str
     birth_last_name: str | None = None
+    nickname: str | None = None
     sex: Sex = Sex.unknown
+    is_living: bool | None = None
     birth_date: date | None = None
     birth_date_approx: bool = False
     birth_place: str | None = None
     death_date: date | None = None
     death_date_approx: bool = False
     death_place: str | None = None
+    cause_of_death: str | None = None
     occupation: str | None = None
     biography: str | None = None
     photo_url: str | None = None
@@ -105,13 +117,16 @@ class PersonUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     birth_last_name: str | None = None
+    nickname: str | None = None
     sex: Sex | None = None
+    is_living: bool | None = None
     birth_date: date | None = None
     birth_date_approx: bool | None = None
     birth_place: str | None = None
     death_date: date | None = None
     death_date_approx: bool | None = None
     death_place: str | None = None
+    cause_of_death: str | None = None
     occupation: str | None = None
     biography: str | None = None
     photo_url: str | None = None
@@ -198,3 +213,139 @@ class TreeGraph(BaseModel):
     persons: list[PersonOut]
     unions: list[UnionOut]
     filiations: list[FiliationOut]
+
+
+# ---------- Events ----------
+
+class EventParticipantCreate(BaseModel):
+    person_id: str
+    role: ParticipantRole = ParticipantRole.other
+
+
+class EventParticipantOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    event_id: str
+    person_id: str
+    role: ParticipantRole
+
+
+class EventCreate(BaseModel):
+    event_type: EventType = EventType.other
+    event_date: date | None = None
+    event_date_approx: bool = False
+    place: str | None = None
+    description: str | None = None
+
+
+class EventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    person_id: str
+    event_type: EventType
+    event_date: date | None = None
+    event_date_approx: bool = False
+    place: str | None = None
+    description: str | None = None
+    created_at: datetime
+    participants: list[EventParticipantOut] = []
+
+
+# ---------- Union witnesses ----------
+
+class UnionWitnessCreate(BaseModel):
+    person_id: str
+    role: str | None = None
+
+
+class UnionWitnessOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    union_id: str
+    person_id: str
+    role: str | None = None
+
+
+# ---------- Sources & citations ----------
+
+class SourceCreate(BaseModel):
+    title: str
+    source_type: SourceType = SourceType.other
+    author: str | None = None
+    repository: str | None = None
+    url: str | None = None
+    notes: str | None = None
+
+
+class SourceUpdate(BaseModel):
+    title: str | None = None
+    source_type: SourceType | None = None
+    author: str | None = None
+    repository: str | None = None
+    url: str | None = None
+    notes: str | None = None
+
+
+class SourceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    source_type: SourceType
+    author: str | None = None
+    repository: str | None = None
+    url: str | None = None
+    notes: str | None = None
+    created_at: datetime
+
+
+class CitationCreate(BaseModel):
+    source_id: str
+    person_id: str | None = None
+    union_id: str | None = None
+    detail: str | None = None
+    confidence: Confidence = Confidence.medium
+
+
+class CitationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    source_id: str
+    person_id: str | None = None
+    union_id: str | None = None
+    detail: str | None = None
+    confidence: Confidence
+    created_at: datetime
+    source: SourceOut
+
+
+# ---------- Research notes ----------
+
+class ResearchNoteCreate(BaseModel):
+    text: str
+
+
+class ResearchNoteUpdate(BaseModel):
+    text: str | None = None
+    done: bool | None = None
+
+
+class ResearchNoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    person_id: str
+    text: str
+    done: bool
+    created_at: datetime
+
+
+# ---------- Relationship calculator ----------
+
+class RelationshipResult(BaseModel):
+    label: str
+    path_description: str
