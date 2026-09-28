@@ -194,51 +194,75 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
   for (const e of ancestorFamilyEdges)
     familyEdges.push({ ...e, unionMidX: e.unionMidX + delta, childrenX: e.childrenX.map((x) => x + delta) });
 
-  // Les traits sont dérivés des fiches effectivement affichées. Ne jamais
-  // réutiliser une ancienne ancre de mise en page : elle peut être déplacée
-  // par une autre union et produisait les prolongements visibles à droite.
+  // Les placements initiaux sont utiles pour connaître l'ordre des branches,
+  // mais ne constituent pas des coordonnées définitives. On compacte d'abord
+  // chaque génération, puis on résout ensemble deux règles simples :
+  // - les fiches d'une même ligne ne se recouvrent jamais ;
+  // - le milieu d'un couple est aligné sur le milieu de ses enfants.
+  // Ceci évite les corrections successives qui pouvaient étirer l'arbre ou
+  // déplacer une personne sans son/sa conjoint·e.
+  const uniqueNodes = Array.from(
+    new Map(nodes.map((node) => [`${node.personId}:${node.generation}`, node])).values()
+  );
+  nodes.splice(0, nodes.length, ...uniqueNodes);
   const nodeAt = new Map(nodes.map((node) => [`${node.personId}:${node.generation}`, node]));
-
-  function moveMaritalUnit(personId: string, generation: number, delta: number) {
-    // Une personne et tous ses conjoints déjà visibles à cette génération
-    // forment un bloc : les dissocier lors d'un réalignement crée des fiches
-    // superposées. Les enfants ne sont pas déplacés ici ; leurs propres
-    // unions seront réalignées à leur tour dans la génération suivante.
-    const pending = [personId];
-    const moved = new Set<string>();
-    while (pending.length > 0) {
-      const currentId = pending.pop()!;
-      if (moved.has(currentId)) continue;
-      moved.add(currentId);
-
-      const node = nodeAt.get(`${currentId}:${generation}`);
-      if (!node) continue;
-      node.x += delta;
-
-      for (const union of unionsByPartner.get(currentId) ?? []) {
-        const partnerId = union.partner1_id === currentId ? union.partner2_id : union.partner1_id;
-        if (partnerId && nodeAt.has(`${partnerId}:${generation}`)) pending.push(partnerId);
-      }
-    }
+  const rows = new Map<number, PersonNodePos[]>();
+  for (const node of nodes) {
+    if (!rows.has(node.generation)) rows.set(node.generation, []);
+    rows.get(node.generation)!.push(node);
+  }
+  for (const row of rows.values()) {
+    row.sort((a, b) => a.x - b.x);
+    row.forEach((node, index) => {
+      node.x = index - (row.length - 1) / 2;
+    });
   }
 
-  // Avec un seul enfant, la convention de lecture est sans ambiguïté : sa
-  // fiche doit tomber à l'aplomb du milieu du couple. On traite les unions
-  // des générations les plus anciennes vers les plus récentes pour que cet
-  // ajustement se propage naturellement à toute la branche.
-  for (const edge of [...familyEdges].sort((a, b) => a.unionGeneration - b.unionGeneration)) {
-    const union = unionsById.get(edge.unionId);
-    if (!union) continue;
-    const childIds = childrenByUnion.get(union.id) ?? [];
-    if (childIds.length !== 1) continue;
+  const SLOT_GAP = 1.05; // 216 px pour des cartes de 188 px : 28 px d'air
+  for (let iteration = 0; iteration < 24; iteration += 1) {
+    const targets = new Map<PersonNodePos, number[]>();
+    const addTarget = (node: PersonNodePos | undefined, x: number) => {
+      if (!node) return;
+      if (!targets.has(node)) targets.set(node, []);
+      targets.get(node)!.push(x);
+    };
 
-    const partner1 = nodeAt.get(`${union.partner1_id}:${edge.unionGeneration}`);
-    const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${edge.unionGeneration}`) : undefined;
-    const child = nodeAt.get(`${childIds[0]}:${edge.childGeneration}`);
-    if (!child || (!partner1 && !partner2)) continue;
+    for (const union of graph.unions) {
+      for (const generation of rows.keys()) {
+        const partner1 = nodeAt.get(`${union.partner1_id}:${generation}`);
+        const partner2 = union.partner2_id ? nodeAt.get(`${union.partner2_id}:${generation}`) : undefined;
+        if (!partner1 && !partner2) continue;
 
-    const unionMidX = partner1 && partner2 ? (partner1.x + partner2.x) / 2 : (partner1 ?? partner2)!.x;
-    moveMaritalUnit(childIds[0], edge.childGeneration, unionMidX - child.x);
+        const children = (childrenByUnion.get(union.id) ?? [])
+          .map((childId) => nodeAt.get(`${childId}:${generation + 1}`))
+          .filter((node): node is PersonNodePos => !!node);
+        const center = children.length > 0
+          ? (Math.min(...children.map((child) => child.x)) + Math.max(...children.map((child) => child.x))) / 2
+          : ((partner1?.x ?? partner2!.x) + (partner2?.x ?? partner1!.x)) / 2;
+
+        if (partner1 && partner2) {
+          addTarget(partner1, center - SLOT_GAP / 2);
+          addTarget(partner2, center + SLOT_GAP / 2);
+        } else {
+          addTarget(partner1 ?? partner2, center);
+        }
+      }
+    }
+
+    for (const [node, values] of targets) {
+      const target = average(values);
+      node.x = (node.x + target) / 2;
+    }
+
+    for (const row of rows.values()) {
+      row.sort((a, b) => a.x - b.x);
+      const averageBefore = average(row.map((node) => node.x));
+      for (let index = 1; index < row.length; index += 1) {
+        row[index].x = Math.max(row[index].x, row[index - 1].x + SLOT_GAP);
+      }
+      const shift = averageBefore - average(row.map((node) => node.x));
+      for (const node of row) node.x += shift;
+    }
   }
 
   spouseLines = [];
