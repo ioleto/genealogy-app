@@ -29,6 +29,7 @@ import {
   removeEventParticipant,
   removeUnionWitness,
   updatePerson,
+  updateUnion,
   updateResearchNote,
   uploadDocument,
   uploadPhoto,
@@ -53,6 +54,7 @@ import PersonPicker from "../components/PersonPicker";
 import FamilySelect from "../components/FamilySelect";
 import SourceSelect from "../components/SourceSelect";
 import { useAuth } from "../auth/AuthContext";
+import { formatPersonName, useTheme } from "../theme/ThemeContext";
 import "./PersonForm.css";
 
 const emptyForm: PersonInput = {
@@ -99,6 +101,7 @@ export default function PersonForm() {
   const isNew = !id;
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { nameDisplay } = useTheme();
   const canEdit = user?.role === "admin" || user?.role === "editor";
 
   const [form, setForm] = useState<PersonInput>(emptyForm);
@@ -202,7 +205,7 @@ export default function PersonForm() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>{isNew ? "Nouvelle fiche" : `${form.first_name} ${form.last_name}`.trim() || "Fiche"}</h1>
+        <h1>{isNew ? "Nouvelle fiche" : formatPersonName(form, nameDisplay) || "Fiche"}</h1>
         {!isNew && canEdit && (
           <button className="btn btn-danger-text" onClick={handleDelete} type="button" disabled={saving}>
             Supprimer la fiche
@@ -752,6 +755,13 @@ function UnionBlock({
   const [showAddChild, setShowAddChild] = useState(false);
   const [child, setChild] = useState<PersonSummary | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [unionType, setUnionType] = useState<UnionType>(union.union_type);
+  const [unionDate, setUnionDate] = useState(union.union_date ?? "");
+  const [unionPlace, setUnionPlace] = useState(union.union_place ?? "");
+  const [endDate, setEndDate] = useState(union.end_date ?? "");
+  const [endReason, setEndReason] = useState(union.end_reason ?? "");
+  const [notes, setNotes] = useState(union.notes ?? "");
 
   const [witnesses, setWitnesses] = useState<UnionWitness[]>([]);
   const [showAddWitness, setShowAddWitness] = useState(false);
@@ -805,6 +815,25 @@ function UnionBlock({
     onChange();
   }
 
+  async function handleUpdateUnion(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateUnion(union.id, {
+        union_type: unionType,
+        union_date: unionDate || null,
+        union_place: unionPlace || null,
+        end_date: endDate || null,
+        end_reason: endReason || null,
+        notes: notes || null,
+      });
+      setEditing(false);
+      onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const excludeIds = [unionOwnerId, union.partner1_id, union.partner2_id, ...children.map((c) => c.child_id)].filter(
     (x): x is string => !!x
   );
@@ -824,11 +853,40 @@ function UnionBlock({
           {union.union_date && <span className="muted"> · {union.union_date}</span>}
         </span>
         {canEdit && (
-          <button className="btn-ghost person-picker-clear" type="button" onClick={onDeleteUnion}>
-            Supprimer
-          </button>
+          <span style={{ display: "flex", gap: "0.45rem" }}>
+            <button className="btn-ghost person-picker-clear" type="button" onClick={() => setEditing((value) => !value)}>
+              {editing ? "Annuler" : "Modifier"}
+            </button>
+            <button className="btn-ghost person-picker-clear" type="button" onClick={onDeleteUnion}>
+              Supprimer
+            </button>
+          </span>
         )}
       </div>
+
+      {editing && canEdit && (
+        <form onSubmit={handleUpdateUnion} className="relation-add-form">
+          <div className="field-row">
+            <div className="field">
+              <label>Type d'union</label>
+              <select value={unionType} onChange={(e) => setUnionType(e.target.value as UnionType)}>
+                {Object.entries(UNION_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Date</label>
+              <input type="date" value={unionDate} onChange={(e) => setUnionDate(e.target.value)} />
+            </div>
+          </div>
+          <div className="field"><label>Lieu</label><input value={unionPlace} onChange={(e) => setUnionPlace(e.target.value)} /></div>
+          <div className="field-row">
+            <div className="field"><label>Date de fin</label><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+            <div className="field"><label>Motif de fin</label><input value={endReason} onChange={(e) => setEndReason(e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+          <div className="relation-add-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</button></div>
+        </form>
+      )}
 
       {children.length > 0 && (
         <ul className="children-list">

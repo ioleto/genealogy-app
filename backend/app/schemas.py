@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, ConfigDict
 
@@ -35,6 +36,7 @@ class UserUpdate(BaseModel):
 class ThemeUpdate(BaseModel):
     theme_primary_color: str | None = None
     theme_secondary_color: str | None = None
+    name_display: Literal["last_name", "birth_last_name"] | None = None
 
 
 class UserOut(BaseModel):
@@ -47,6 +49,7 @@ class UserOut(BaseModel):
     is_active: bool
     theme_primary_color: str | None = None
     theme_secondary_color: str | None = None
+    name_display: Literal["last_name", "birth_last_name"] | None = "last_name"
     created_at: datetime
 
 

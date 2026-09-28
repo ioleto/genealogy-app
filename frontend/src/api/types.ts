@@ -11,6 +11,7 @@ export interface User {
   is_active: boolean;
   theme_primary_color: string | null;
   theme_secondary_color: string | null;
+  name_display: "last_name" | "birth_last_name" | null;
   created_at: string;
 }
 

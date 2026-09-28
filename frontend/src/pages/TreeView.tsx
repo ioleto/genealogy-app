@@ -4,7 +4,7 @@ import { extractErrorMessage, getTreeGraph } from "../api/client";
 import type { Person, TreeGraph } from "../api/types";
 import { computeTreeLayout } from "../components/treeLayout";
 import PersonPicker from "../components/PersonPicker";
-import { useTheme } from "../theme/ThemeContext";
+import { formatPersonName, useTheme } from "../theme/ThemeContext";
 import "./TreeView.css";
 
 const SLOT_WIDTH = 216;
@@ -37,7 +37,7 @@ function fitText(text: string, maxWidth: number, avgCharWidth: number): { text: 
 
 export default function TreeView() {
   const navigate = useNavigate();
-  const { primary, secondary } = useTheme();
+  const { primary, secondary, nameDisplay } = useTheme();
   const [graph, setGraph] = useState<TreeGraph | null>(null);
   const [rootId, setRootId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -352,7 +352,7 @@ export default function TreeView() {
             </span>
             <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
               {rootId && personById.get(rootId)
-                ? `${personById.get(rootId)!.first_name} ${personById.get(rootId)!.last_name}`
+                ? formatPersonName(personById.get(rootId)!, nameDisplay)
                 : "—"}
             </span>
           </div>
@@ -453,7 +453,7 @@ export default function TreeView() {
                 const hasPhoto = !!person.photo_url;
                 const textX = hasPhoto ? PHOTO_MARGIN * 2 + PHOTO_SIZE : 14;
                 const availableWidth = CARD_WIDTH - textX - RIGHT_PADDING;
-                const nameFit = fitText(`${person.first_name} ${person.last_name}`, availableWidth, NAME_CHAR_WIDTH);
+                const nameFit = fitText(formatPersonName(person, nameDisplay), availableWidth, NAME_CHAR_WIDTH);
                 const datesFit = fitText(yearsOf(person), availableWidth, SUB_CHAR_WIDTH);
                 const occupationFit = person.occupation
                   ? fitText(person.occupation, availableWidth, SUB_CHAR_WIDTH)
@@ -567,7 +567,7 @@ export default function TreeView() {
         return (
           <div ref={menuRef} className="tree-context-menu" style={{ left: menu.x, top: menu.y }}>
             <div className="tree-context-menu-title">
-              {person.first_name} {person.last_name}
+              {formatPersonName(person, nameDisplay)}
             </div>
             <button
               type="button"

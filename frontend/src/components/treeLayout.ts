@@ -72,7 +72,12 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
     descendantVisited.add(personId);
 
     const unions = (unionsByPartner.get(personId) ?? []).filter((u) => unionsById.has(u.id));
-    const attachPoints: number[] = [];
+    // L'ancre sert à placer la personne qui porte l'union ; lineX est la
+    // position réelle de son/sa partenaire. Les distinguer est essentiel :
+    // auparavant les deux fiches étaient posées au même endroit dès qu'elles
+    // avaient des enfants, d'où un raccord qui semblait sortir à droite.
+    const attachments: Array<{ anchorX: number; lineX?: number }> = [];
+    const familyEdgesForPerson: Array<{ edge: FamilyEdge; spouseX?: number }> = [];
 
     for (const union of unions) {
       const spouseId = union.partner1_id === personId ? union.partner2_id : union.partner1_id;
@@ -83,33 +88,44 @@ export function computeTreeLayout(graph: TreeGraph, rootId: string): TreeLayout 
           descendantVisited.add(spouseId);
           const spouseX = nextLeafX++;
           nodes.push({ personId: spouseId, x: spouseX, generation, isBlood: false });
-          attachPoints.push(spouseX);
+          attachments.push({ anchorX: spouseX - 0.5, lineX: spouseX });
         }
         continue;
       }
 
       const childCenters = childIds.map((cid) => layoutDescendant(cid, generation + 1));
       const unionMidX = (Math.min(...childCenters) + Math.max(...childCenters)) / 2;
-      familyEdges.push({
+      const edge: FamilyEdge = {
         unionMidX,
         unionGeneration: generation,
         childrenX: childCenters,
         childGeneration: generation + 1,
-      });
+      };
+      familyEdges.push(edge);
 
       if (spouseId && !descendantVisited.has(spouseId)) {
         descendantVisited.add(spouseId);
-        nodes.push({ personId: spouseId, x: unionMidX, generation, isBlood: false });
-        attachPoints.push(unionMidX);
+        const spouseX = unionMidX + 0.5;
+        nodes.push({ personId: spouseId, x: spouseX, generation, isBlood: false });
+        attachments.push({ anchorX: unionMidX, lineX: spouseX });
+        familyEdgesForPerson.push({ edge, spouseX });
       } else {
-        attachPoints.push(unionMidX);
+        attachments.push({ anchorX: unionMidX });
+        familyEdgesForPerson.push({ edge });
       }
     }
 
-    const personX = attachPoints.length > 0 ? average(attachPoints) : nextLeafX++;
+    const personX = attachments.length > 0 ? average(attachments.map((attachment) => attachment.anchorX)) : nextLeafX++;
     nodes.push({ personId, x: personX, generation, isBlood: true });
-    for (const ax of attachPoints) {
-      spouseLines.push({ x1: personX, x2: ax, generation });
+    for (const attachment of attachments) {
+      const x2 = attachment.lineX ?? attachment.anchorX;
+      if (x2 !== personX) spouseLines.push({ x1: personX, x2, generation });
+    }
+    for (const { edge, spouseX } of familyEdgesForPerson) {
+      // La descente part toujours du milieu géométrique du couple, pas du
+      // milieu de la fratrie. Le trait vertical est donc centré entre les
+      // deux fiches, y compris lorsque les enfants sont répartis d'un côté.
+      edge.unionMidX = spouseX === undefined ? personX : (personX + spouseX) / 2;
     }
     return personX;
   }

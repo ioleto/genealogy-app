@@ -99,6 +99,7 @@ export async function updateUser(
 export async function updateMyTheme(data: {
   theme_primary_color?: string | null;
   theme_secondary_color?: string | null;
+  name_display?: "last_name" | "birth_last_name";
 }): Promise<User> {
   const res = await api.patch<User>("/api/users/me/theme", data);
   return res.data;

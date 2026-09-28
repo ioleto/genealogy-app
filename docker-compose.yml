@@ -9,7 +9,7 @@
 services:
   db:
     image: postgres:16-alpine
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-genealogy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Merci de renseigner un mot de passe PostgreSQL}
@@ -27,7 +27,7 @@ services:
   backend:
     build:
       context: ./backend
-    restart: unless-stopped
+    restart: always
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-genealogy}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-genealogy}
       JWT_SECRET: ${JWT_SECRET:?Merci de renseigner un secret JWT aléatoire (ex. openssl rand -hex 32)}
@@ -46,7 +46,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    restart: unless-stopped
+    restart: always
     ports:
       # Accès direct optionnel (utile sans reverse proxy, ou pour des tests).
       - "${PUBLISHED_PORT:-8091}:80"

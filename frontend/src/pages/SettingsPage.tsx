@@ -13,12 +13,13 @@ const PRESETS: { name: string; primary: string; secondary: string }[] = [
 export default function SettingsPage() {
   const { user } = useAuth();
   const canEdit = user?.role === "admin" || user?.role === "editor";
-  const { primary, secondary, setColors } = useTheme();
+  const { primary, secondary, nameDisplay, setColors, setNameDisplay } = useTheme();
   const [draftPrimary, setDraftPrimary] = useState(primary);
   const [draftSecondary, setDraftSecondary] = useState(secondary);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [draftNameDisplay, setDraftNameDisplay] = useState(nameDisplay);
 
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -31,6 +32,7 @@ export default function SettingsPage() {
     setSaved(false);
     try {
       await setColors(draftPrimary, draftSecondary);
+      await setNameDisplay(draftNameDisplay);
       setSaved(true);
     } catch (err) {
       setError(extractErrorMessage(err, "Impossible d'enregistrer les couleurs."));
@@ -146,6 +148,27 @@ export default function SettingsPage() {
           </button>
           <button className="btn btn-ghost" type="button" onClick={resetDefaults}>
             Réinitialiser
+          </button>
+          {saved && <span className="muted" style={{ alignSelf: "center", fontSize: "0.85rem" }}>Enregistré.</span>}
+        </div>
+      </section>
+
+      <section className="card" style={{ padding: "1.6rem 1.8rem", maxWidth: 520, marginTop: "1.4rem" }}>
+        <h2 style={{ fontSize: "1.05rem", marginBottom: "0.4rem" }}>Affichage des noms</h2>
+        <p className="muted" style={{ fontSize: "0.86rem", marginTop: 0, marginBottom: "1.2rem" }}>
+          Ce choix s'applique à l'arbre et au titre des fiches. Lorsqu'un nom de naissance n'est pas renseigné,
+          le nom reste affiché.
+        </p>
+        <div className="field">
+          <label htmlFor="name-display">Nom à afficher</label>
+          <select id="name-display" value={draftNameDisplay} onChange={(e) => setDraftNameDisplay(e.target.value as typeof draftNameDisplay)}>
+            <option value="last_name">Nom</option>
+            <option value="birth_last_name">Nom de naissance</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: "0.6rem", marginTop: "1.4rem" }}>
+          <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving}>
+            {saving ? "Enregistrement…" : "Enregistrer"}
           </button>
           {saved && <span className="muted" style={{ alignSelf: "center", fontSize: "0.85rem" }}>Enregistré.</span>}
         </div>

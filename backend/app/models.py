@@ -83,6 +83,9 @@ class User(Base):
 
     theme_primary_color: Mapped[str | None] = mapped_column(String(9), nullable=True)
     theme_secondary_color: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    # Préférence personnelle : quand il existe, le nom de naissance peut être
+    # utilisé à la place du nom courant dans l'arbre et le titre des fiches.
+    name_display: Mapped[str | None] = mapped_column(String(20), default="last_name", nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

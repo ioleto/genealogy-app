@@ -55,6 +55,8 @@ async def update_theme(db: AsyncSession, user: models.User, data: schemas.ThemeU
         user.theme_primary_color = data.theme_primary_color
     if data.theme_secondary_color is not None:
         user.theme_secondary_color = data.theme_secondary_color
+    if data.name_display is not None:
+        user.name_display = data.name_display
     await db.commit()
     await db.refresh(user)
     return user
